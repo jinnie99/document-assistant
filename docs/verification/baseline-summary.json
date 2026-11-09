@@ -1,0 +1,82 @@
+{
+  "tag": "baseline",
+  "generatedAt": "2026-10-29T04:39:04.928Z",
+  "fixtures": [
+    {
+      "fixture": "family",
+      "run": "baseline",
+      "totalUnits": 54,
+      "totalOutputs": 30,
+      "unitCounts": {
+        "pass": 26,
+        "partial": 28,
+        "missing": 0,
+        "wrong_mapping": 0,
+        "ambiguous": 0
+      },
+      "outputCounts": {
+        "matched": 28,
+        "duplicate": 1,
+        "unexpected": 1,
+        "ambiguous": 0
+      },
+      "contentPassed": false,
+      "httpStatus": 200,
+      "mappingCompleted": true,
+      "stable": true,
+      "cleanupStatus": 200,
+      "overallPassed": false
+    },
+    {
+      "fixture": "birth",
+      "run": "baseline",
+      "totalUnits": 42,
+      "totalOutputs": 35,
+      "unitCounts": {
+        "pass": 37,
+        "partial": 3,
+        "missing": 0,
+        "wrong_mapping": 2,
+        "ambiguous": 0
+      },
+      "outputCounts": {
+        "matched": 31,
+        "duplicate": 0,
+        "unexpected": 0,
+        "ambiguous": 4
+      },
+      "contentPassed": false,
+      "httpStatus": 200,
+      "mappingCompleted": true,
+      "stable": true,
+      "cleanupStatus": 200,
+      "overallPassed": false
+    },
+    {
+      "fixture": "bank_university",
+      "run": "baseline",
+      "totalUnits": 38,
+      "totalOutputs": 40,
+      "unitCounts": {
+        "pass": 23,
+        "partial": 4,
+        "missing": 3,
+        "wrong_mapping": 8,
+        "ambiguous": 0
+      },
+      "outputCounts": {
+        "matched": 28,
+        "duplicate": 1,
+        "unexpected": 10,
+        "ambiguous": 1
+      },
+      "contentPassed": false,
+      "httpStatus": 200,
+      "mappingCompleted": true,
+      "stable": true,
+      "cleanupStatus": 200,
+      "overallPassed": false
+    }
+  ],
+  "allPassed": false
+}

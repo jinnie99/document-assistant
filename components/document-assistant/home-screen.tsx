@@ -2,7 +2,7 @@
 
 import type { Ref } from "react";
 import Image from "next/image";
-import { ArrowRight, Camera, PlayCircle, ShieldCheck, Upload } from "lucide-react";
+import { ArrowRight, Camera, Download, PlayCircle, ShieldCheck, Upload } from "lucide-react";
 
 type Props = {
   headingRef: Ref<HTMLHeadingElement>;
@@ -29,6 +29,7 @@ export function HomeScreen({ headingRef, preparing, configured, onCamera, onGall
       <div className="assist-home-links">
         <button className="assist-text-button" disabled={preparing} onClick={onSample}>{preparing ? "사진을 준비하고 있어요…" : "먼저 예시로 살펴보기"}<ArrowRight /></button>
         <a className="assist-text-button" href="/promo"><PlayCircle />시연영상 보기</a>
+        <a className="assist-text-button" href="/samples/inspection-form-sample.png" download="정기검사_신청서_예시.png"><Download />예시 서류 사진 받기</a>
       </div>
     </div>
     <p className="assist-reassurance"><ShieldCheck />사진은 서버에 파일로 남기지 않아요.</p>

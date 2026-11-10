@@ -64,6 +64,8 @@
 .assist-home-buttons .assist-secondary:hover:not(:disabled) { background: #f2f5ed; border-color: #aebdb1; }
 .assist-home-buttons .assist-text-button { min-height: 44px; padding: 7px 4px; color: #526b60; font-size: 15px !important; font-weight: 500; }
 .assist-home-buttons .assist-text-button > svg { width: 16px; height: 16px; }
+.assist-home-links { display: flex; justify-content: center; align-items: center; gap: 4px 18px; flex-wrap: wrap; }
+.assist-home-links a.assist-text-button { text-decoration: none; }
 .assist-reassurance { flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 6px; color: #65756b; font-size: 11px; line-height: 1.5; }
 .assist-reassurance svg { width: 15px; height: 15px; color: #44725b; }
 .assist-service-note { flex-shrink: 0; font-size: 12px; line-height: 1.5; text-align: center; color: #78571c; background: #fff3db; border-radius: 11px; padding: 9px 11px; }

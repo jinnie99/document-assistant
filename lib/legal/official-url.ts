@@ -13,11 +13,13 @@ export type OfficialEvidence = {
   contentType: string;
   linkOnly: boolean;
   retrievedAt: string;
+  kind?: "law" | "form" | "procedure";
 };
 
 type PolicyDependencies = {
   resolveHost?: (hostname: string) => Promise<string[]>;
   verifiedHosts?: ReadonlySet<string>;
+  publicInstitutions?: boolean;
 };
 
 type FetchDependencies = PolicyDependencies & {
@@ -53,15 +55,15 @@ function publicAddress(address: string): boolean {
   return false;
 }
 
-function allowedHostname(hostname: string, verifiedHosts: ReadonlySet<string>): boolean {
+function allowedHostname(hostname: string, verifiedHosts: ReadonlySet<string>, publicInstitutions = false): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, "");
-  return host === "gov.kr" || host.endsWith(".gov.kr") || host === "law.go.kr" || host.endsWith(".law.go.kr") || host.endsWith(".go.kr") || verifiedHosts.has(host);
+  return host === "gov.kr" || host.endsWith(".gov.kr") || host === "law.go.kr" || host.endsWith(".law.go.kr") || host.endsWith(".go.kr") || verifiedHosts.has(host) || (publicInstitutions && host.endsWith(".or.kr"));
 }
 
-export function isPotentialOfficialUrl(value: string, verifiedHosts: ReadonlySet<string> = new Set()): boolean {
+export function isPotentialOfficialUrl(value: string, verifiedHosts: ReadonlySet<string> = new Set(), publicInstitutions = false): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password && !url.port && !isIP(url.hostname) && allowedHostname(url.hostname, verifiedHosts);
+    return url.protocol === "https:" && !url.username && !url.password && !url.port && !isIP(url.hostname) && allowedHostname(url.hostname, verifiedHosts, publicInstitutions);
   } catch { return false; }
 }
 
@@ -69,7 +71,7 @@ export async function validateOfficialUrl(value: string, dependencies: PolicyDep
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("UNSAFE_OFFICIAL_URL"); }
   const verifiedHosts = new Set([...(dependencies.verifiedHosts ?? [])].map(host => host.toLowerCase().replace(/\.$/, "")));
-  if (url.protocol !== "https:" || url.username || url.password || url.port || !allowedHostname(url.hostname, verifiedHosts) || isIP(url.hostname)) throw new Error("UNSAFE_OFFICIAL_URL");
+  if (url.protocol !== "https:" || url.username || url.password || url.port || !allowedHostname(url.hostname, verifiedHosts, dependencies.publicInstitutions) || isIP(url.hostname)) throw new Error("UNSAFE_OFFICIAL_URL");
   const resolveHost = dependencies.resolveHost ?? systemResolve;
   for (let check = 0; check < 2; check++) {
     let addresses: string[];

@@ -105,6 +105,8 @@ function officialUrl(candidate: LegalCandidate): string {
   return `https://www.law.go.kr/${encodeURIComponent(kind)}/${encodeURIComponent(candidate.name)}`;
 }
 
+export function officialFormUrl(value: unknown): string { return safeOfficialUrl(value); }
+
 function safeOfficialUrl(value: unknown): string {
   const raw = text(value);
   if (raw.startsWith("/LSW/") || raw.startsWith("/DRF/")) return `https://www.law.go.kr${raw}`;

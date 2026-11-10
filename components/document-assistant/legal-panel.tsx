@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BookOpen, ExternalLink, Scale } from "lucide-react";
+import { AlertTriangle, BookOpen, Download, ExternalLink, Scale } from "lucide-react";
 import type { LegalContext } from "@/lib/legal/types";
 import { buildLegalViewModel } from "@/lib/legal/view-model";
 
@@ -23,11 +23,12 @@ export function LegalPanel({ legal, busy = false, error, formDescription, docume
       <h3>이 서식 안내</h3>
       {formDescription && <p>{formDescription}</p>}
       <dl className="assist-legal-rows">
-        <div><dt>근거</dt><dd>{model.canonicalName} {model.formGuide.formLabel}</dd></div>
+        <div><dt>현행 근거</dt><dd>{model.formGuide.lawName} {model.formGuide.formLabel}</dd></div>
+        {model.formGuide.printedBasis && model.formGuide.superseded && <div><dt>사진 속 서식</dt><dd>{model.formGuide.printedBasis}</dd></div>}
         {model.formGuide.printedRevision && <div><dt>사진 속 개정</dt><dd>{model.formGuide.printedRevision}</dd></div>}
         <div><dt>{model.formGuide.differentForm && !model.formGuide.download ? "현행 같은 번호" : "현행 서식"}</dt><dd>{model.formGuide.currentRevision || model.formGuide.currentTitle ? [model.formGuide.currentRevision, model.formGuide.currentTitle].filter(Boolean).join(" · ") : "현행 목록에서 찾지 못했어요"}{model.formGuide.differentForm && !model.formGuide.download ? " (다른 서식)" : ""}</dd></div>
       </dl>
-      {model.formGuide.download && <a className="assist-button assist-secondary assist-full" href={model.formGuide.download.url} target="_blank" rel="noopener noreferrer"><BookOpen aria-hidden="true" />{model.formGuide.download.label}<ExternalLink aria-hidden="true" /></a>}
+      {model.formGuide.downloads.map(item => <a key={item.url} className="assist-button assist-secondary assist-full" href={item.url} target="_blank" rel="noopener noreferrer"><Download aria-hidden="true" />{item.label}</a>)}
       <ul className="assist-legal-list assist-legal-sources">{model.formGuide.articles.map(item => <li key={item.url}><a href={item.url} target="_blank" rel="noopener noreferrer"><Scale aria-hidden="true" /><span>{item.heading}{item.note && <small className="assist-legal-note">{item.note}</small>}</span><ExternalLink aria-hidden="true" /></a></li>)}{model.formGuide.lawUrl && <li><a href={model.formGuide.lawUrl} target="_blank" rel="noopener noreferrer"><Scale aria-hidden="true" /><span>{model.canonicalName} 원문 보기{model.formGuide.articles.length ? "" : " (조문 목록)"}</span><ExternalLink aria-hidden="true" /></a></li>}</ul>
     </div>}
 
@@ -59,12 +60,11 @@ export function LegalPanel({ legal, busy = false, error, formDescription, docume
         {model.provisions.map(item => <details key={item.id} className="assist-legal-provision"><summary>{item.heading}</summary><p>{item.text}</p></details>)}
       </div>}
 
-      <div className="assist-legal-block">
+      {model.procedure && <div className="assist-legal-block">
         <h3>민원 절차</h3>
-        {model.procedure
-          ? <dl className="assist-legal-rows">{model.procedure.map(row => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
-          : <p className="assist-small">공식 절차 안내를 아직 찾지 못했어요. 접수처와 준비물은 소관 기관에 확인해 주세요.</p>}
-      </div>
+        <dl className="assist-legal-rows">{model.procedure.map(row => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}{row.origin && <small className="assist-legal-note">{row.origin}에서 확인</small>}</dd></div>)}</dl>
+        {model.procedureHasWeb && <p className="assist-small">웹 자료에서 찾은 항목은 접수 전에 기관에 다시 확인해 주세요.</p>}
+      </div>}
 
       <div className="assist-legal-block">
         <h3>소관 기관</h3>

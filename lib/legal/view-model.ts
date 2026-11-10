@@ -2,7 +2,7 @@ import type { LegalCandidate, LegalContact, LegalContext, LegalSearchReference, 
 
 export type LegalViewState = "hidden" | "pending" | "ambiguous" | "not_found" | "unavailable" | "completed";
 
-export type LegalViewRow = { label: string; value: string };
+export type LegalViewRow = { label: string; value: string; origin?: string };
 
 export type LegalFormGuide = {
   formLabel: string;
@@ -15,6 +15,10 @@ export type LegalFormGuide = {
   lawUrl: string;
   differentForm: boolean;
   documentTitle: string;
+  lawName: string;
+  printedBasis: string;
+  superseded: boolean;
+  downloads: { label: string; url: string }[];
 };
 
 export type LegalViewCandidate = {
@@ -41,6 +45,7 @@ export type LegalViewModel = {
   provisions: LegalViewProvision[];
   procedure: LegalViewRow[] | null;
   procedureMissing: boolean;
+  procedureHasWeb: boolean;
   office: LegalViewOfficeRow[];
   formGuide: LegalFormGuide | null;
   contacts: LegalContact[];
@@ -63,7 +68,7 @@ const SOURCE_LABELS: Record<LegalSource["kind"], string> = {
   form: "서식",
 };
 
-const PROCEDURE_LABELS: [keyof NonNullable<LegalContext["procedure"]>, string][] = [
+const PROCEDURE_LABELS: ["reception" | "submission" | "requiredItems" | "fee" | "processingTime" | "contact", string][] = [
   ["reception", "접수처"],
   ["submission", "제출 방법"],
   ["requiredItems", "준비물"],
@@ -141,11 +146,35 @@ function printedArticleLinks(context: LegalContext): LegalFormGuide["articles"] 
     if (!lawName || !base) return [];
     const provision = lawName === context.canonicalRule?.name ? context.provisions.find(entry => entry.article === base) : undefined;
     const removed = provision ? /^제\d+조(의\d+)?\s*삭제/.test(provision.text) : false;
-    return [{ heading: `${lawName} ${item.article}`, url: articleUrl(lawName, base), note: removed ? "현행 법령에서 삭제된 조문이에요" : "서류에 적힌 조문이에요" }];
+    return [{ heading: `${lawName} ${item.article}`, url: articleUrl(lawName, base), note: removed || item.removed ? "현행 법령에서 삭제된 조문이에요" : context.currentForm ? "사진 속 서류에 적힌 조문이에요" : "서류에 적힌 조문이에요" }];
   });
 }
 
+/** 제목과 칸 구성이 맞는 현행 서식을 찾았을 때의 안내 */
+function currentFormGuide(context: LegalContext, documentTitle: string): LegalFormGuide {
+  const form = context.currentForm!;
+  const reference = context.detectedReferences.find(item => /\d/.test(item.formNumber ?? ""));
+  const printedNumber = /\d+/.exec(reference?.formNumber ?? "")?.[0] ?? "";
+  const printedRevision = isoFromPrinted(reference?.date ?? "");
+  const currentIso = isoFromPrinted(form.revision);
+  const superseded = Boolean(reference && (normalized(reference.name) !== normalized(form.lawName) || `별지 제${Number(printedNumber)}호서식` !== form.label));
+  const links = form.articles.flatMap(item => {
+    const base = articleBase(item.article);
+    return base ? [{ heading: `${item.lawName} ${item.article}`, url: articleUrl(item.lawName, base), note: "현행 근거 조문이에요" }] : [];
+  });
+  const seen = new Set<string>();
+  const downloads = [form.hwpUrl && { label: "서식 원본 받기 (한글)", url: form.hwpUrl }, form.pdfUrl && { label: "서식 원본 받기 (PDF)", url: form.pdfUrl }].filter(Boolean) as { label: string; url: string }[];
+  return {
+    formLabel: form.label, printedRevision, currentRevision: form.revision, currentTitle: form.title, download: downloads[0] ?? null, downloads,
+    revisionMismatch: !superseded && Boolean(printedRevision && currentIso && printedRevision !== currentIso),
+    articles: [...links, ...printedArticleLinks(context)].filter(item => !seen.has(item.url) && Boolean(seen.add(item.url))).slice(0, 6),
+    lawUrl: `https://www.law.go.kr/법령/${encodeURIComponent(form.lawName)}`, differentForm: false, documentTitle, lawName: form.lawName, superseded,
+    printedBasis: reference ? `${reference.name} ${reference.formNumber ?? ""}`.trim() : "",
+  };
+}
+
 function formGuideFor(context: LegalContext, documentTitle: string): LegalFormGuide | null {
+  if (context.currentForm) return currentFormGuide(context, documentTitle);
   const reference = context.detectedReferences.find(item => /\d/.test(item.formNumber ?? ""));
   const number = reference ? (/\d+/.exec(reference.formNumber ?? "")?.[0] ?? "") : "";
   if (!number) return null;
@@ -174,6 +203,10 @@ function formGuideFor(context: LegalContext, documentTitle: string): LegalFormGu
     currentRevision,
     currentTitle: shown?.title ?? "",
     download: target ? { label: `현행 ${target.label ?? formLabel} 내려받기`, url: target.url } : null,
+    downloads: target ? [{ label: `현행 ${target.label ?? formLabel} 내려받기`, url: target.url }] : [],
+    lawName: legalName,
+    printedBasis: "",
+    superseded: false,
     revisionMismatch: Boolean(target && printedRevision && currentIso && printedRevision !== currentIso),
     differentForm,
     documentTitle,
@@ -194,13 +227,14 @@ function headlineFor(state: LegalViewState): string {
 }
 
 function sourceLabel(source: LegalSource): string {
+  if (source.kind === "procedure" && !/\.(go\.kr|gov\.kr)(\/|$)/.test(source.url)) return "기관 웹 자료";
   return SOURCE_LABELS[source.kind] ?? "참고 자료";
 }
 
 function emptyModel(state: LegalViewState): LegalViewModel {
   return {
     state, headline: headlineFor(state), canonicalName: "", candidates: [], hierarchy: [], administrativeRules: [], moreAdministrativeRules: 0, provisions: [],
-    procedure: null, procedureMissing: false, office: [], formGuide: null, contacts: [], noThreeTier: false, oldFormMismatch: false, summary: "", summarySourceIds: [],
+    procedure: null, procedureMissing: false, procedureHasWeb: false, office: [], formGuide: null, contacts: [], noThreeTier: false, oldFormMismatch: false, summary: "", summarySourceIds: [],
     sources: [], notices: [], queryTime: "", disclaimer: LEGAL_DISCLAIMER,
   };
 }
@@ -251,10 +285,12 @@ export function buildLegalViewModel(context: LegalContext | undefined, options: 
   const rows = procedure ? PROCEDURE_LABELS.flatMap(([key, label]) => {
     const raw = procedure[key];
     const value = Array.isArray(raw) ? raw.join(", ") : raw;
-    return value ? [{ label, value }] : [];
+    const origin = procedure.fieldOrigins?.[key as keyof NonNullable<typeof procedure.fieldOrigins>];
+    return value ? [{ label, value, ...(origin ? { origin: origin === "law" ? "법령" : "웹 자료" } : {}) }] : [];
   }) : [];
   model.procedure = rows.length ? rows : null;
   model.procedureMissing = !rows.length;
+  model.procedureHasWeb = rows.some(row => row.origin === "웹 자료");
 
   const authority = context.authority || canonical.authority;
   model.office = [
@@ -273,10 +309,11 @@ export function buildLegalViewModel(context: LegalContext | undefined, options: 
   model.queryTime = queryTimeText(context.retrievedAt);
 
   if (context.stale) notices.push("국가법령정보 연결 문제로 마지막으로 확인한 정보를 보여드려요.");
+  if (model.formGuide?.superseded) notices.push(`사진의 서식은 예전 서식으로 보여요. 이름과 칸 구성이 맞는 현행 서식은 ${model.formGuide.lawName} ${model.formGuide.formLabel}이에요. 아래에서 원본을 받아 작성해 주세요.`);
   if (model.formGuide?.differentForm) notices.push(model.formGuide.download
     ? `현행 ${model.formGuide.formLabel}은 다른 서식이에요. '${model.formGuide.documentTitle}'는 번호가 바뀐 현행 서식으로 안내해요.`
     : `현행 ${model.formGuide.formLabel}은 사진의 '${model.formGuide.documentTitle}'와 다른 서식이에요. 이 법령의 현행 서식에서 찾지 못했으니 접수 기관에 현행 서식을 확인해 주세요.`);
-  if (model.oldFormMismatch && !model.formGuide?.revisionMismatch && !model.formGuide?.differentForm) notices.push("서식에 적힌 번호나 날짜가 현행 기준과 달라요. 예전 서식이거나 개정됐을 수 있어요.");
+  if (model.oldFormMismatch && !model.formGuide?.revisionMismatch && !model.formGuide?.differentForm && !model.formGuide?.superseded) notices.push("서식에 적힌 번호나 날짜가 현행 기준과 달라요. 예전 서식이거나 개정됐을 수 있어요.");
   if (model.noThreeTier) notices.push("법률·시행령·시행규칙 관계를 찾지 못해 정본 정보만 보여드려요.");
   if (!model.office.length) notices.push("소관 기관을 확인하지 못했어요. 서류에 적힌 기관이나 공식 안내에서 확인해 주세요.");
   if (model.procedureMissing) notices.push("공식 민원 절차 안내를 찾지 못했어요. 접수처와 준비물은 소관 기관에 확인해 주세요.");

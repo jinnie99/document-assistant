@@ -1,5 +1,5 @@
 import { StaleCache } from "./cache.ts";
-import type { LegalApiDocument, LegalApiResult, LegalCandidate, LegalSearchReference } from "./types.ts";
+import type { LegalApiDocument, LegalApiResult, LegalCandidate, LegalFormListing, LegalSearchReference } from "./types.ts";
 
 const SEARCH_TTL_MS = 6 * 60 * 60_000;
 const DETAIL_TTL_MS = 24 * 60 * 60_000;
@@ -32,6 +32,7 @@ export type LegalApiClient = {
   fetchBody(candidate: LegalCandidate, signal?: AbortSignal): Promise<LegalApiResult<LegalApiDocument>>;
   fetchHierarchy(candidate: LegalCandidate, signal?: AbortSignal): Promise<LegalApiResult<LegalApiDocument>>;
   fetchThreeTier(candidate: LegalCandidate, signal?: AbortSignal): Promise<LegalApiResult<LegalApiDocument>>;
+  searchForms?(title: string, signal?: AbortSignal): Promise<LegalApiResult<LegalFormListing[]>>;
 };
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -87,6 +88,17 @@ function normalizeCandidates(payload: unknown, target: "law" | "admrul"): LegalC
   });
 }
 
+function normalizeFormListings(payload: unknown): LegalFormListing[] {
+  const root = record(payload);
+  const search = record(root?.licBylSearch ?? root?.LicBylSearch ?? root);
+  return list(search?.licbyl).flatMap(value => {
+    const item = record(value);
+    if (!item || text(item["별표종류"]) !== "서식") return [];
+    const title = text(item["별표명"]), lawName = text(item["관련법령명"]), lawSerial = text(item["관련법령일련번호"]), number = text(item["별표번호"]);
+    return title && lawName && /^\d+$/.test(lawSerial) && /^\d{6}$/.test(number) ? [{ title, lawName, lawSerial, number, authority: text(item["소관부처명"]), date: date(item["공포일자"]) }] : [];
+  });
+}
+
 async function readJson(response: Response): Promise<unknown> {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
@@ -123,6 +135,7 @@ export function createLegalApiClient(options: ClientOptions): LegalApiClient {
   const timeoutMs = options.timeoutMs ?? 12_000;
   const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
   const searchCache = new StaleCache<string, LegalApiResult<LegalCandidate[]>>({ freshTtlMs: SEARCH_TTL_MS, staleTtlMs: STALE_TTL_MS, capacity: 80, now });
+  const formCache = new StaleCache<string, LegalApiResult<LegalFormListing[]>>({ freshTtlMs: SEARCH_TTL_MS, staleTtlMs: STALE_TTL_MS, capacity: 80, now });
   const detailCache = new StaleCache<string, LegalApiResult<LegalApiDocument>>({ freshTtlMs: DETAIL_TTL_MS, staleTtlMs: STALE_TTL_MS, capacity: 120, now });
 
   const request = async (path: string, parameters: Record<string, string>, signal?: AbortSignal): Promise<unknown> => {
@@ -174,6 +187,10 @@ export function createLegalApiClient(options: ClientOptions): LegalApiClient {
     fetchBody(candidate, signal) { return detail(candidate.apiTarget, candidate, signal); },
     fetchHierarchy(candidate, signal) { return detail("lsStmd", candidate, signal); },
     fetchThreeTier(candidate, signal) { return detail("thdCmp", candidate, signal); },
+    searchForms(title, signal) {
+      const query = title.trim();
+      return cached(formCache, query, async () => normalizeFormListings(await request("lawSearch.do", { target: "licbyl", query, display: "100" }, signal)));
+    },
   };
 }
 

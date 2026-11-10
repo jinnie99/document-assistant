@@ -63,13 +63,35 @@ export function validateLegalSummary(context: LegalContext, evidence: OfficialEv
   const procedureValues = [procedure.reception, procedure.submission, ...procedure.requiredItems, procedure.fee, procedure.processingTime, procedure.contact].filter(Boolean);
   if (procedureValues.length) {
     if (!procedure.sourceIds.length) invalid();
-    const citedEvidence = evidence.filter(item => procedure.sourceIds.includes(item.id)).map(item => item.text).join(" ");
-    if (!citedEvidence || procedureValues.some(item => !citedEvidence.includes(item))) invalid();
+    const citedEvidence = evidence.filter(item => procedure.sourceIds.includes(item.id)).map(item => item.text.replace(/\s/g, "")).join(" ");
+    if (!citedEvidence || procedureValues.some(item => !citedEvidence.includes(item.replace(/\s/g, "")))) invalid();
     for (const item of procedureValues) validateInvariants(context, evidence, item);
   }
   return { overview, overviewSourceIds, procedure: procedureValues.length ? procedure : null };
 }
 
+/** 근거 본문에 없는 절차 항목만 지우고, 출처는 문구가 실제로 있는 자료로 다시 계산한다. */
+export function keepSupportedProcedure(value: unknown, evidence: OfficialEvidence[]): unknown {
+  if (!isRecord(value) || !isRecord(value.procedure)) return value;
+  const sources = evidence.map(item => ({ id: item.id, text: item.text.replace(/\s/g, "") }));
+  const used = new Set<string>();
+  const supported = (raw: unknown): boolean => {
+    if (typeof raw !== "string" || !raw.trim()) return false;
+    const needle = raw.replace(/\s/g, "");
+    const found = sources.filter(item => item.text.includes(needle));
+    for (const item of found.slice(0, 2)) used.add(item.id);
+    return found.length > 0;
+  };
+  const single = (key: string) => supported(value.procedure && (value.procedure as Record<string, unknown>)[key]) ? (value.procedure as Record<string, unknown>)[key] : "";
+  const procedure = {
+    reception: single("reception"), submission: single("submission"), fee: single("fee"), processingTime: single("processingTime"), contact: single("contact"),
+    requiredItems: Array.isArray(value.procedure.requiredItems) ? value.procedure.requiredItems.filter(supported) : [],
+  };
+  return { ...value, procedure: { ...procedure, sourceIds: [...used] } };
+}
+
 export async function summarizeLegalContext(context: LegalContext, evidence: OfficialEvidence[], signal?: AbortSignal): Promise<GroundedLegalSummary> {
-  return validateLegalSummary(context, evidence, await generateGroundedLegalSummary(context, evidence, signal));
+  const pruned = keepSupportedProcedure(await generateGroundedLegalSummary(context, evidence, signal), evidence);
+  try { return validateLegalSummary(context, evidence, pruned); }
+  catch { return validateLegalSummary(context, evidence, { ...(pruned as Record<string, unknown>), overview: "", overviewSourceIds: [] }); }
 }

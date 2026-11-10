@@ -9,7 +9,20 @@ export type LegalSearchReference = {
   formNumber?: string;
 };
 
-export type LegalPrintedArticle = { lawName: string; article: string };
+export type LegalPrintedArticle = { lawName: string; article: string; removed?: boolean };
+
+export type LegalFormListing = { title: string; lawName: string; lawSerial: string; number: string; authority: string; date: string };
+
+export type LegalCurrentForm = {
+  title: string;
+  lawName: string;
+  lawSerial: string;
+  label: string;
+  revision: string;
+  hwpUrl: string;
+  pdfUrl: string;
+  articles: LegalPrintedArticle[];
+};
 
 export type LegalReferenceHints = {
   references: LegalSearchReference[];
@@ -76,6 +89,8 @@ export type ProcedureInfo = {
   processingTime: string;
   contact: string;
   sourceIds: string[];
+  /** 항목별 출처. 법령에서 먼저 채우고 빈 항목만 웹 자료로 채운다. */
+  fieldOrigins?: Partial<Record<"reception" | "submission" | "requiredItems" | "fee" | "processingTime" | "contact", "law" | "web">>;
 };
 
 export type LegalFormEntry = { id: string; title: string; url: string; sourceIds: string[]; label?: string; revision?: string };
@@ -89,6 +104,7 @@ export type LegalContext = {
   hierarchy: LegalHierarchy;
   provisions: LegalProvision[];
   forms: LegalFormEntry[];
+  currentForm?: LegalCurrentForm;
   contacts?: LegalContact[];
   authority: string;
   department?: string;

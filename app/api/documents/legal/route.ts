@@ -4,12 +4,13 @@ import { createLegalApiClient, type LegalApiClient } from "../../../../lib/legal
 import { resolveSelectedLegalContext } from "../../../../lib/legal/resolver.ts";
 import type { LegalCandidate, LegalContext, LegalReferenceHints } from "../../../../lib/legal/types.ts";
 import { enrichLegalContext } from "../../../../lib/legal/procedure.ts";
+import type { DocumentHint } from "../../../../lib/legal/current-form.ts";
 
-export const maxDuration = 90;
+export const maxDuration = 180;
 
 type Dependencies = {
   store: AnalysisStore;
-  resolveSelected: (hints: LegalReferenceHints, candidate: LegalCandidate, signal: AbortSignal) => Promise<LegalContext>;
+  resolveSelected: (hints: LegalReferenceHints, candidate: LegalCandidate, signal: AbortSignal, document: DocumentHint) => Promise<LegalContext>;
 };
 
 const processClient = globalThis as typeof globalThis & { legalRouteClient?: { oc: string; client: LegalApiClient } };
@@ -41,7 +42,7 @@ export function createLegalRouteHandlers(dependencies: Dependencies) {
         const selected = dependencies.store.selectLegalCandidate(input.analysisId, input.candidateId);
         const pending = selected.analysis.legal!;
         return await withBudget(request, async () => {
-          const refreshed = await dependencies.resolveSelected({ references: pending.detectedReferences }, selected.candidate, request.signal);
+          const refreshed = await dependencies.resolveSelected({ references: pending.detectedReferences, receivingOffice: pending.printedReceivingOffice, citedArticles: pending.printedArticles }, selected.candidate, request.signal, { title: selected.analysis.document.title, fieldLabels: selected.analysis.document.fields.map(field => field.label) });
           if (request.signal.aborted) throw new InputError("CANCELLED", 499);
           const legal = { ...refreshed, detectedReferences: pending.detectedReferences, candidates: pending.candidates, printedReceivingOffice: pending.printedReceivingOffice, printedArticles: pending.printedArticles };
           return json(dependencies.store.updateLegal(input.analysisId as string, legal, selected.legalVersion).legal);
@@ -53,7 +54,7 @@ export function createLegalRouteHandlers(dependencies: Dependencies) {
 
 const handlers = createLegalRouteHandlers({
   store: analysisStore,
-  resolveSelected: async (hints, candidate, signal) => enrichLegalContext(await resolveSelectedLegalContext(hints, candidate, configuredClient(), signal), signal),
+  resolveSelected: async (hints, candidate, signal, document) => enrichLegalContext({ ...await resolveSelectedLegalContext(hints, candidate, configuredClient(), signal), printedReceivingOffice: hints.receivingOffice, printedArticles: hints.citedArticles }, signal, { document, client: configuredClient(), keepCanonical: true }),
 });
 
 export const GET = handlers.GET;

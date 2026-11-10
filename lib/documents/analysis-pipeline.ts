@@ -5,7 +5,7 @@ import type { AnalysisEvent, AnalysisResult, DocumentIdentity, DocumentReading, 
 import { createLegalApiClient, type LegalApiClient } from "../legal/client.ts";
 import { resolveLegalContext as resolveLegalReferences } from "../legal/resolver.ts";
 import type { LegalContext, LegalReferenceHints } from "../legal/types.ts";
-import { enrichLegalContext } from "../legal/procedure.ts";
+import { enrichLegalContext, type EnrichmentOptions } from "../legal/procedure.ts";
 
 type AnalysisDependencies = {
   store: AnalysisStore;
@@ -14,7 +14,7 @@ type AnalysisDependencies = {
   searchDocument: (document: DocumentReading, signal: AbortSignal) => Promise<SearchResult>;
   readLegalReferences?: (image: string, signal: AbortSignal) => Promise<LegalReferenceHints>;
   resolveLegalContext?: (hints: LegalReferenceHints, signal: AbortSignal) => Promise<LegalContext>;
-  enrichLegalContext?: (context: LegalContext, signal: AbortSignal) => Promise<LegalContext>;
+  enrichLegalContext?: (context: LegalContext, signal: AbortSignal, options?: EnrichmentOptions) => Promise<LegalContext>;
 };
 
 const pendingSearch: SearchResult = { status: "pending", case: "photo_only", summary: "같은 서류와 작성 안내를 찾고 있어요.", sources: [] };
@@ -160,7 +160,7 @@ export function createAnalysisStream(request: Request, image: string, overrides:
               dependencies.store.updateLegal(analysisId, legalState("pending", hints));
               emit({ type: "legal_reference", analysisId, references: hints.references });
               const resolved = await abortable(dependencies.resolveLegalContext!(hints, work.signal), work.signal);
-              const legal = dependencies.enrichLegalContext ? await abortable(dependencies.enrichLegalContext(resolved, work.signal), work.signal) : resolved;
+              const legal = dependencies.enrichLegalContext ? await abortable(dependencies.enrichLegalContext(resolved, work.signal, { document: { title: document.title, fieldLabels: document.fields.map(field => field.label) }, client: configuredLegalClient }), work.signal) : resolved;
               checkCancelled(work.signal);
               const analysis = dependencies.store.updateLegal(analysisId, legal);
               emit(legal.status === "unavailable" ? { type: "legal_unavailable", analysis } : { type: "legal_complete", analysis });

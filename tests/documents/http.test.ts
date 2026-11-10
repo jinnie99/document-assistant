@@ -48,3 +48,23 @@ test("stream capacity remains reserved until release and release is idempotent",
     } finally { third(); }
   } finally { first(); second(); }
 });
+
+test("behind a proxy the public host is accepted while other origins stay blocked", async () => {
+  const { requestJson } = await import("../../lib/documents/http.ts");
+  const make = (origin: string) => new Request("http://localhost:10000/api/documents/analyze", { method: "POST", headers: { "content-type": "application/json", origin, host: "localhost:10000", "x-forwarded-host": "document-assistant.onrender.com" }, body: "{}" });
+  assert.deepEqual(await requestJson(make("https://document-assistant.onrender.com")), {});
+  await assert.rejects(requestJson(make("https://evil.example")), (error: { status?: number }) => error.status === 403);
+});
+
+test("analysis quota is off locally and limits per IP and per day when configured", async () => {
+  const { consumeAnalysisQuota } = await import("../../lib/documents/http.ts");
+  const req = (ip: string) => new Request("http://x/", { headers: { "x-forwarded-for": ip } });
+  for (let i = 0; i < 5; i++) consumeAnalysisQuota(req("9.9.9.9"), {});
+  const env = { ANALYSIS_DAILY_LIMIT: "3", ANALYSIS_HOURLY_LIMIT_PER_IP: "2" };
+  const now = Date.parse("2030-01-01T00:00:00Z");
+  consumeAnalysisQuota(req("1.1.1.1"), env, now); consumeAnalysisQuota(req("1.1.1.1"), env, now);
+  assert.throws(() => consumeAnalysisQuota(req("1.1.1.1"), env, now), (error: { code?: string; status?: number }) => error.code === "ANALYSIS_QUOTA" && error.status === 429);
+  consumeAnalysisQuota(req("2.2.2.2"), env, now);
+  assert.throws(() => consumeAnalysisQuota(req("3.3.3.3"), env, now), (error: { code?: string }) => error.code === "ANALYSIS_QUOTA");
+  consumeAnalysisQuota(req("3.3.3.3"), env, now + 86_400_000);
+});

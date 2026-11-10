@@ -11,6 +11,7 @@ const messages: Record<string, string> = {
   AI_NOT_CONFIGURED: "AI 연결 설정이 필요해요. 서비스 관리자에게 알려 주세요.",
   AI_KEY_REJECTED: "AI 연결을 확인하지 못했어요. 서비스 관리자에게 알려 주세요.",
   AI_RATE_LIMIT: "요청이 많아요. 잠시 후 다시 눌러 주세요.",
+  ANALYSIS_QUOTA: "지금은 시험 사용량이 모두 찼어요. 나중에 다시 이용해 주세요.",
   AI_TIMEOUT: "사진을 살펴보는 데 시간이 걸려요. 다시 시도해 주세요.",
   AI_UNAVAILABLE: "AI 연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요.",
   SESSION_EXPIRED: "이전에 본 서류의 시간이 지났어요. 사진을 다시 살펴볼게요.",
@@ -45,7 +46,8 @@ export async function requestJson(request: Request): Promise<Record<string, unkn
     try { from = new URL(origin); } catch { throw new InputError("INVALID_JSON", 403); }
     const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
     const localAlias = localHosts.has(from.hostname) && localHosts.has(target.hostname) && from.port === target.port && from.protocol === target.protocol && request.headers.get("host") === from.host;
-    if (from.origin !== target.origin && !localAlias) throw new InputError("INVALID_JSON", 403);
+    const publicHost = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").split(",")[0].trim();
+    if (from.origin !== target.origin && !localAlias && from.host !== publicHost) throw new InputError("INVALID_JSON", 403);
   }
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new InputError("INVALID_JSON", 415);
   const limit = 9 * 1024 * 1024;
@@ -86,6 +88,22 @@ export function acquireBudget(request: Request): () => void {
   budget.active++;
   let released = false;
   return () => { if (!released) { released = true; budget.active--; } };
+}
+
+const analysisQuota = globalThis as typeof globalThis & { documentAnalysisQuota?: { day: string; count: number; hours: Map<string, number[]> } };
+
+/** 공개 시험 서버에서만 환경변수로 켠다. 사진 분석 한 번마다 유료 API를 쓰므로 일일·IP별 횟수를 제한한다. */
+export function consumeAnalysisQuota(request: Request, env: Readonly<Record<string, string | undefined>> = process.env, now = Date.now()): void {
+  const daily = Number(env.ANALYSIS_DAILY_LIMIT) || 0, hourly = Number(env.ANALYSIS_HOURLY_LIMIT_PER_IP) || 0;
+  if (!daily && !hourly) return;
+  const quota = analysisQuota.documentAnalysisQuota ??= { day: "", count: 0, hours: new Map<string, number[]>() };
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (quota.day !== day) { quota.day = day; quota.count = 0; quota.hours.clear(); }
+  const client = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 80) || "local";
+  const recent = (quota.hours.get(client) || []).filter(time => time > now - 3_600_000);
+  if ((daily && quota.count >= daily) || (hourly && recent.length >= hourly)) throw new InputError("ANALYSIS_QUOTA", 429);
+  quota.count++;
+  quota.hours.set(client, [...recent, now]);
 }
 
 export async function withBudget<T>(request: Request, task: () => Promise<T>): Promise<T> {

@@ -2,7 +2,7 @@
 
 import type { Ref } from "react";
 import Image from "next/image";
-import { ArrowRight, Camera, Download, ShieldCheck, Upload } from "lucide-react";
+import { Camera, Download, Eye, ShieldCheck, Upload } from "lucide-react";
 import { SAMPLE_DOCUMENT_NAME, SAMPLE_DOCUMENT_URL } from "./sample-document";
 import { LanguagePicker } from "./language-picker";
 import { useI18n, type Locale } from "./i18n";
@@ -33,7 +33,7 @@ export function HomeScreen({ headingRef, preparing, configured, onCamera, onGall
       <button className="assist-button assist-primary" disabled={preparing} onClick={onCamera}><Camera />{t.homeCamera}</button>
       <button className="assist-button assist-secondary" disabled={preparing} onClick={onGallery}><Upload />{t.homeGallery}</button>
       <div className="assist-home-links">
-        <button className="assist-text-button" disabled={preparing} onClick={onSample}>{preparing ? t.homePreparing : t.homeSample}<ArrowRight /></button>
+        <button className="assist-text-button" disabled={preparing} onClick={onSample}><Eye />{preparing ? t.homePreparing : t.homeSample}</button>
         <a className="assist-text-button" href={SAMPLE_DOCUMENT_URL} download={SAMPLE_DOCUMENT_NAME}><Download />{t.homeDownload}</a>
       </div>
     </div>

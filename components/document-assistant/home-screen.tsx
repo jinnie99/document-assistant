@@ -30,7 +30,7 @@ export function HomeScreen({ headingRef, preparing, configured, onCamera, onGall
       <Image className="assist-home-illustration" src="/images/home-guide-warm.webp" alt="" fill sizes="(max-width: 480px) 100vw, 390px" loading="eager" fetchPriority="high" />
     </div>
     <div className="assist-home-buttons">
-      <button className="assist-button assist-primary" disabled={preparing} onClick={onCamera}><Camera />{t.homeCamera}<ArrowRight /></button>
+      <button className="assist-button assist-primary" disabled={preparing} onClick={onCamera}><Camera />{t.homeCamera}</button>
       <button className="assist-button assist-secondary" disabled={preparing} onClick={onGallery}><Upload />{t.homeGallery}</button>
       <div className="assist-home-links">
         <button className="assist-text-button" disabled={preparing} onClick={onSample}>{preparing ? t.homePreparing : t.homeSample}<ArrowRight /></button>

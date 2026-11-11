@@ -5,6 +5,7 @@ import { Minus, Plus, RotateCcw } from "lucide-react";
 import type { Box, DocumentField } from "@/lib/documents/types";
 import { fieldCrop, fitViewport, panViewport, pixelBox, pointInPhoto, selectionBox, zoomViewport } from "@/lib/documents/view-geometry";
 import type { AssistantPhoto } from "./types";
+import { useI18n } from "./i18n";
 
 type Props = {
   photo: AssistantPhoto;
@@ -20,6 +21,7 @@ type Props = {
 
 export function DocumentCanvas({ photo, field, fields = [], selection, mode = "pan", disabled = false, onSelection, onSelectField, onConfirm }: Props) {
   const svg = useRef<SVGSVGElement>(null);
+  const { t, fieldLabel } = useI18n();
   const stage = useRef<HTMLDivElement>(null);
   const initial = field ? pixelBox(fieldCrop(field.box), photo) : { x: 0, y: 0, width: photo.width, height: photo.height };
   const [view, setView] = useState<Box>(initial);
@@ -118,18 +120,18 @@ export function DocumentCanvas({ photo, field, fields = [], selection, mode = "p
   };
   const selected = selection ?? field?.box;
   return <div className="assist-canvas-wrap">
-    <div ref={stage} className={`assist-document-canvas is-${mode}`} tabIndex={0} role="group" aria-label={mode === "select" ? "서류 영역 선택. 화살표로 이동, Shift와 화살표로 크기 조절, Enter로 확인" : "확대한 서류 사진. 화살표로 이동, 더하기와 빼기로 확대와 축소"} onKeyDown={keyDown}>
+    <div ref={stage} className={`assist-document-canvas is-${mode}`} tabIndex={0} role="group" aria-label={mode === "select" ? t.canvasSelectAria : t.canvasPanAria} onKeyDown={keyDown}>
       <svg ref={svg} viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`} preserveAspectRatio="xMidYMid meet" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancelPointer}>
         <image href={photo.url} width={photo.width} height={photo.height} />
-        {fields.map(item => <g key={item.id} role={onSelectField && mode === "pan" ? "button" : undefined} tabIndex={onSelectField && mode === "pan" ? 0 : undefined} aria-label={`${item.label} 칸 안내 보기`} onKeyDown={event => { if (!disabled && mode === "pan" && onSelectField && ["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); onSelectField(item); } }}><rect className="assist-field-hit" {...pixelBox(item.box, photo)} rx={3} vectorEffect="non-scaling-stroke" /></g>)}
+        {fields.map(item => <g key={item.id} role={onSelectField && mode === "pan" ? "button" : undefined} tabIndex={onSelectField && mode === "pan" ? 0 : undefined} aria-label={t.viewFieldAria(fieldLabel(item))} onKeyDown={event => { if (!disabled && mode === "pan" && onSelectField && ["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); onSelectField(item); } }}><rect className="assist-field-hit" {...pixelBox(item.box, photo)} rx={3} vectorEffect="non-scaling-stroke" /></g>)}
         {selected && <rect className={mode === "select" ? "assist-region-selection" : "assist-field-selected"} {...pixelBox(selected, photo)} vectorEffect="non-scaling-stroke" />}
       </svg>
     </div>
-    <div className="assist-zoom-controls" aria-label="사진 확대 조절">
-      <button type="button" disabled={disabled} onClick={() => changeZoom(1 / 1.5)} aria-label="사진 축소"><Minus />축소</button>
+    <div className="assist-zoom-controls" aria-label={t.canvasZoomAria}>
+      <button type="button" disabled={disabled} onClick={() => changeZoom(1 / 1.5)} aria-label={t.canvasZoomOutAria}><Minus />{t.canvasZoomOut}</button>
       <span aria-live="polite">{Math.round(photo.width / view.width * 100)}%</span>
-      <button type="button" disabled={disabled} onClick={() => changeZoom(1.5)} aria-label="사진 확대"><Plus />확대</button>
-      <button type="button" disabled={disabled} onClick={reset}><RotateCcw />전체</button>
+      <button type="button" disabled={disabled} onClick={() => changeZoom(1.5)} aria-label={t.canvasZoomInAria}><Plus />{t.canvasZoomIn}</button>
+      <button type="button" disabled={disabled} onClick={reset}><RotateCcw />{t.canvasWhole}</button>
     </div>
   </div>;
 }

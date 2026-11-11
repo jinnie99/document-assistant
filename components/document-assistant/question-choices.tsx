@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { GuideAnswers, SituationQuestion } from "@/lib/documents/types";
 import { questionLayout, type QuestionLayout } from "@/lib/documents/question-layout";
+import { useI18n } from "./i18n";
 
 export function QuestionChoices({ question, large, onAnswer }: { question: SituationQuestion; large: boolean; onAnswer: (answers: GuideAnswers) => void }) {
   const [layout, setLayout] = useState<QuestionLayout>("choices");
@@ -12,6 +13,7 @@ export function QuestionChoices({ question, large, onAnswer }: { question: Situa
   const measure = useRef<HTMLDivElement>(null);
   const pager = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const { t } = useI18n();
 
   const rebuild = useCallback(() => {
     const container = area.current, probe = measure.current;
@@ -54,12 +56,12 @@ export function QuestionChoices({ question, large, onAnswer }: { question: Situa
   };
 
   return <div ref={area} className="assist-question">
-    <h3 ref={heading} tabIndex={-1}>{separated && !questionPage ? "맞는 답을 눌러 주세요." : question.text}</h3>
+    <h3 ref={heading} tabIndex={-1}>{separated && !questionPage ? t.questionPickAnswer : question.text}</h3>
     {choices.length > 0 && <div className="assist-question-options">{choices.map(choice => <button key={choice.id} type="button" onClick={() => onAnswer({ [question.id]: choice.id })}>{choice.label}</button>)}</div>}
-    {layout !== "all" && <nav ref={pager} className="assist-question-pages" aria-label="질문 선택지 넘겨 보기">
-      <button type="button" disabled={pageIndex === 0} onClick={() => go(pageIndex - 1)} aria-label={separated && pageIndex === 1 ? "질문 다시 보기" : "이전 선택지 보기"}><ArrowLeft />{separated && pageIndex === 1 ? "질문 보기" : "이전"}</button>
-      <span aria-live="polite">{questionPage ? "질문" : `${choiceIndex + 1} / ${question.choices.length}`}</span>
-      <button type="button" disabled={lastPage} onClick={() => go(pageIndex + 1)} aria-label={questionPage ? "선택지 보기" : "다음 선택지 보기"}>{questionPage ? "선택지 보기" : "다음"}<ArrowRight /></button>
+    {layout !== "all" && <nav ref={pager} className="assist-question-pages" aria-label={t.questionPagesAria}>
+      <button type="button" disabled={pageIndex === 0} onClick={() => go(pageIndex - 1)} aria-label={separated && pageIndex === 1 ? t.questionBackAria : t.questionPreviousAria}><ArrowLeft />{separated && pageIndex === 1 ? t.questionView : t.questionPrevious}</button>
+      <span aria-live="polite">{questionPage ? t.questionWord : `${choiceIndex + 1} / ${question.choices.length}`}</span>
+      <button type="button" disabled={lastPage} onClick={() => go(pageIndex + 1)} aria-label={questionPage ? t.questionViewChoices : t.questionNextAria}>{questionPage ? t.questionViewChoices : t.questionNext}<ArrowRight /></button>
     </nav>}
     <div ref={measure} className="assist-question-measure" aria-hidden="true" inert><h3>{question.text}</h3><div className="assist-question-options">{question.choices.map(choice => <button key={choice.id} type="button" tabIndex={-1}>{choice.label}</button>)}</div></div>
   </div>;

@@ -1,5 +1,6 @@
 import type { Box, DocumentField, DocumentIdentity, DocumentReading, DocumentSource, FieldGuidance, SituationQuestion } from "./types.ts";
 import { MAX_DOCUMENT_FIELDS } from "./limits.ts";
+import { KOREAN_GUIDE_LIMITS, type GuideLimits } from "../i18n/locales.ts";
 
 type RecordValue = Record<string, unknown>;
 const MAX_FIELDS = MAX_DOCUMENT_FIELDS;
@@ -105,28 +106,30 @@ export function parseSearchReport(value: unknown): { summary: string; sources: D
   return { summary: text(raw.summary, "검색 요약", 500, true), sources };
 }
 
-function question(value: unknown): SituationQuestion | null {
+function question(value: unknown, limits: GuideLimits, korean: boolean): SituationQuestion | null {
   if (value === null) return null;
   const raw = object(value, ["id", "text", "choices"], "상황 질문");
   const choices = list(raw.choices, "질문 선택지", (item) => {
     const choice = object(item, ["id", "label"], "질문 선택지");
-    return { id: id(choice.id, "선택지 ID"), label: text(choice.label, "선택지 이름", 20) };
+    return { id: id(choice.id, "선택지 ID"), label: text(choice.label, "선택지 이름", limits.choice) };
   }, 3, 3);
   unique(choices.map((item) => item.id), "중복 선택지 ID");
   unique(choices.map((item) => item.label), "중복 선택지 이름");
-  if (!choices.some((item) => item.id === "unknown" && /모르/.test(item.label))) return invalid("모름 선택지");
-  return { id: id(raw.id, "질문 ID"), text: text(raw.text, "질문 내용", 50), choices };
+  if (!choices.some((item) => item.id === "unknown" && (!korean || /모르/.test(item.label)))) return invalid("모름 선택지");
+  return { id: id(raw.id, "질문 ID"), text: text(raw.text, "질문 내용", limits.question), choices };
 }
 
-export function parseGuidance(value: unknown, fieldId: string): FieldGuidance {
+/** limits를 넘기면 한국어가 아닌 안내로 보고 길이 제한과 '모름' 선택지 문구 검사를 그 언어에 맞춘다. */
+export function parseGuidance(value: unknown, fieldId: string, translated?: GuideLimits): FieldGuidance {
+  const limits = translated ?? KOREAN_GUIDE_LIMITS;
   const raw = object(value, ["fieldId", "explanation", "example", "check", "provenance", "sourceIds", "question"], "칸 안내");
   const parsedId = id(raw.fieldId, "항목 ID");
   if (parsedId !== fieldId) return invalid("요청한 항목");
   if (!["official_guide", "form_context", "photo_inference"].includes(String(raw.provenance))) return invalid("안내 근거 종류");
-  const parsedQuestion = question(raw.question);
+  const parsedQuestion = question(raw.question, limits, !translated);
   return {
-    fieldId: parsedId, explanation: text(raw.explanation, "작성 설명", 80, Boolean(parsedQuestion)),
-    example: text(raw.example, "작성 예시", 80, true), check: text(raw.check, "확인할 내용", 80, true),
+    fieldId: parsedId, explanation: text(raw.explanation, "작성 설명", limits.text, Boolean(parsedQuestion)),
+    example: text(raw.example, "작성 예시", limits.text, true), check: text(raw.check, "확인할 내용", limits.check, true),
     provenance: raw.provenance as FieldGuidance["provenance"],
     sourceIds: unique(list(raw.sourceIds, "참고 자료", (item) => id(item, "자료 ID"), 12), "중복 참고 자료"), question: parsedQuestion,
   };

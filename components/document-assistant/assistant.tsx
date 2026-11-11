@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, Check, FileText, HelpCircle, List, Scale, X } from "lucide-react";
 import type { AnalysisResult, ApiError, Box, DocumentField, DocumentIdentity, FieldGuidance, GuideAnswers } from "@/lib/documents/types";
 import type { LegalContext } from "@/lib/legal/types";
@@ -20,38 +20,46 @@ import { RegionEditorDialog } from "./region-editor-dialog";
 import { AnalysisProgress, type AnalysisStage } from "./analysis-progress";
 import { IdentityReview } from "./identity-review";
 import type { AssistantPhoto } from "./types";
+import { createI18n, I18nProvider, LOCALE_INFO, localizedError, useStoredLocale } from "./i18n";
+import { ko, type Messages } from "./messages/ko";
 
 type Screen = "home" | "preview" | "analyzing" | "review" | "mapping" | "guide" | "finish";
 type Dialog = "help" | "fields" | "sources" | "legal" | "legal-candidates" | null;
 
-function legalEntryLabel(legal: LegalContext) {
+function legalEntryLabel(legal: LegalContext, t: Messages) {
   const state = buildLegalViewModel(legal).state;
-  if (state === "pending") return "법령·절차 찾는 중";
-  if (state === "ambiguous") return "비슷한 법령 중 골라 주세요";
-  if (state === "completed") return "관련 법령과 민원 절차 보기";
-  return "법령·절차 정보를 찾지 못했어요";
+  if (state === "pending") return t.legalPending;
+  if (state === "ambiguous") return t.legalAmbiguous;
+  if (state === "completed") return t.legalCompleted;
+  return t.legalUnavailable;
 }
 
+/** code는 서버 오류 코드이거나, 응답을 읽지 못했을 때의 "NETWORK"다. 화면에서 고른 언어의 문구로 바꾼다. */
 class ApiRequestError extends Error {
   status: number;
-  constructor(message: string, status: number) { super(message); this.status = status; }
+  code?: string;
+  constructor(message: string, status: number, code?: string) { super(message); this.status = status; this.code = code; }
 }
 
-function searchLabel(analysis: AnalysisResult) {
-  if (analysis.mappingStatus === "in_progress") return "찾은 칸부터 사진으로 먼저 안내해요";
-  if (analysis.search.status === "pending") return "사진으로 먼저 안내해요 · 작성 안내 검색 중";
-  if (analysis.search.status === "unavailable") return "검색 연결이 어려워 사진으로 안내해요";
-  return analysis.search.case === "form_and_guide" ? "서류와 작성 안내를 찾았어요" : analysis.search.case === "form_only" ? "서류를 찾아 AI가 설명해요" : "사진을 읽어 AI가 설명해요";
+/** 화면이 이미 고른 언어로 만든 안내 문구. 그대로 보여 준다. */
+class UserError extends Error {}
+
+const PHOTO_WARNING_KEYS = ["photoLowResolution", "photoDark", "photoBlurry"] as const;
+
+function searchLabel(analysis: AnalysisResult, t: Messages) {
+  if (analysis.mappingStatus === "in_progress") return t.searchPartial;
+  if (analysis.search.status === "pending") return t.searchPending;
+  if (analysis.search.status === "unavailable") return t.searchUnavailable;
+  return analysis.search.case === "form_and_guide" ? t.searchFormAndGuide : analysis.search.case === "form_only" ? t.searchFormOnly : t.searchPhotoOnly;
 }
 
 async function requestJson<T>(url: string, body: unknown, signal: AbortSignal, method: "POST" | "PATCH" = "POST"): Promise<T> {
   const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
   let result: T | ApiError;
-  try { result = await response.json(); } catch { throw new Error("연결이 원활하지 않아요. 잠시 뒤 다시 해 주세요."); }
+  try { result = await response.json(); } catch { throw new ApiRequestError(ko.errorNetwork, response.status, "NETWORK"); }
   if (!response.ok) {
     const error = result as ApiError;
-    if (response.status === 410) throw new ApiRequestError("안내 시간이 지났어요. 사진을 다시 확인하면 계속할 수 있어요.", 410);
-    throw new Error(error.error || "안내를 준비하지 못했어요. 다시 시도해 주세요.");
+    throw new ApiRequestError(error.error || ko.errorGeneric, response.status, typeof error.code === "string" ? error.code : undefined);
   }
   return result as T;
 }
@@ -102,6 +110,43 @@ export function DocumentAssistant() {
   const currentPhoto = useRef<AssistantPhoto | undefined>(undefined);
   const guideCache = useRef(new Map<string, FieldGuidance>());
   const title = useRef<HTMLHeadingElement>(null);
+  const [locale, setLocale] = useStoredLocale();
+  const [labels, setLabels] = useState<{ key: string; map: Record<string, string> }>({ key: "", map: {} });
+  const labelKey = `${analysis?.id ?? ""}:${locale}`;
+  const i18n = useMemo(() => createI18n(locale, labels.key === labelKey ? labels.map : {}), [locale, labels, labelKey]);
+  const { t } = i18n;
+  const explain = (problem: unknown, fallback: string) => {
+    if (problem instanceof UserError) return problem.message;
+    if (problem instanceof ApiRequestError && problem.status === 410) return t.errorExpired;
+    if (problem instanceof ApiRequestError && problem.code === "NETWORK") return t.errorNetwork;
+    return localizedError(i18n, problem, fallback);
+  };
+  const photoWarning = (text: string) => { const key = PHOTO_WARNING_KEYS.find(item => ko[item] === text); return key ? t[key] : text; };
+
+  // 서류에 인쇄된 한국어 항목명을 고른 언어로 옮겨 받는다. 칸이 늘어날 때마다 새로 생긴 항목만 서버가 옮긴다.
+  const analysisId = analysis?.id;
+  const fieldSignature = analysis?.document.fields.map(field => field.id).join("|") ?? "";
+  const mappingInProgress = analysis?.mappingStatus === "in_progress";
+  const labelKeyRef = useRef(labelKey);
+  useEffect(() => { labelKeyRef.current = labelKey; }, [labelKey]);
+  useEffect(() => {
+    if (locale === "ko" || !analysisId || !fieldSignature) return;
+    const key = `${analysisId}:${locale}`;
+    // 칸을 찾는 동안에는 목록이 계속 늘어나므로 조금 모았다가 한 번에 묻는다. 이미 보낸 요청은 끊지 않고 끝까지 받는다.
+    const timer = setTimeout(() => {
+      void fetch("/api/documents/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId, locale }), cache: "no-store" })
+        .then(response => response.ok ? response.json() : null)
+        .then(result => {
+          const map = result?.labels;
+          if (!map || typeof map !== "object" || labelKeyRef.current !== key) return;
+          const texts = Object.fromEntries(Object.entries(map).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+          setLabels(previous => ({ key, map: previous.key === key ? { ...previous.map, ...texts } : texts }));
+        }).catch(() => {});
+    }, mappingInProgress ? 1500 : 300);
+    return () => clearTimeout(timer);
+  }, [locale, analysisId, fieldSignature, mappingInProgress]);
+
+  useEffect(() => { document.documentElement.lang = LOCALE_INFO[locale].lang; }, [locale]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -131,8 +176,8 @@ export function DocumentAssistant() {
     const token = ++fileGeneration.current;
     cancel(); stopAnalysis(); closeRegion(); setError(undefined); setPreparing(true);
     try {
-      if (file.size > 15 * 1024 * 1024) throw new Error("15MB 이하의 사진을 골라 주세요.");
-      if (!file.type.startsWith("image/")) throw new Error("JPG나 PNG 같은 사진 파일을 골라 주세요.");
+      if (file.size > 15 * 1024 * 1024) throw new UserError(t.fileTooBig);
+      if (!file.type.startsWith("image/")) throw new UserError(t.fileNotImage);
       const result = await normalizeImage(file);
       if (token !== fileGeneration.current) { URL.revokeObjectURL(result.url); return; }
       keepPhoto({ url: result.url, dataUrl: result.dataUrl, width: result.w, height: result.h, warnings: result.warnings, name: file.name, sample });
@@ -141,14 +186,14 @@ export function DocumentAssistant() {
       streamAnalysisId.current = undefined; latestMapped.current = undefined; confirmedIdentity.current = false; setIdentity(undefined);
       setAnalysis(undefined); setSelected(undefined); setGuidance(undefined); setAnswersByField({}); setViewed(new Set()); guideCache.current.clear();
       setScreen("preview");
-    } catch (problem) { if (token === fileGeneration.current) setError(problem instanceof Error ? problem.message : "사진을 열지 못했어요."); }
+    } catch (problem) { if (token === fileGeneration.current) setError(problem instanceof UserError || (locale === "ko" && problem instanceof Error) ? problem.message : t.fileOpenFailed); }
     finally { if (token === fileGeneration.current) setPreparing(false); }
   };
   const prepareSample = async () => {
     const token = ++fileGeneration.current;
     setError(undefined); setPreparing(true);
     try { const file = await createSampleFile(); if (token === fileGeneration.current) await onFile(file, true); }
-    catch (problem) { if (token === fileGeneration.current) { setPreparing(false); setError(problem instanceof Error ? problem.message : "예시를 준비하지 못했어요."); } }
+    catch { if (token === fileGeneration.current) { setPreparing(false); setError(t.sampleFailed); } }
   };
   const reset = () => {
     discardAnalysis(analysis?.id);
@@ -169,7 +214,7 @@ export function DocumentAssistant() {
     let quickIdentity: DocumentIdentity | undefined;
     let mapped: AnalysisResult | undefined;
     try {
-      const response = await fetch("/api/documents/analyze", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" }, body: JSON.stringify({ image: photo.dataUrl }), signal: abort.signal, cache: "no-store" });
+      const response = await fetch("/api/documents/analyze", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" }, body: JSON.stringify({ image: photo.dataUrl, locale }), signal: abort.signal, cache: "no-store" });
       await consumeAnalysisStream(response, (event) => {
         if (abort.signal.aborted || token !== analysisGeneration.current) return;
         if (event.type === "stage") setAnalysisStage(event.stage);
@@ -185,7 +230,7 @@ export function DocumentAssistant() {
           if (first) {
             setAnalysis(result); setIdentity(documentIdentityForReading(result.document, quickIdentity));
             if (!result.document.readable || !result.document.fields.length) {
-              setError("사진의 글자나 칸을 잘 읽지 못했어요. 서류를 가까이서 밝게 다시 찍어 주세요."); setScreen("preview");
+              setError(t.errorUnreadable); setScreen("preview");
             } else setScreen(confirmedIdentity.current ? "guide" : "review");
           } else setAnalysis((current) => mergeAnalysisFields(current, result));
         }
@@ -197,11 +242,15 @@ export function DocumentAssistant() {
         if (event.type === "legal_reference") setAnalysis((current) => current?.id === event.analysisId ? { ...current, legal: { ...(current.legal ?? pendingLegalContext()), detectedReferences: event.references } } : current);
         if (event.type === "legal_complete" || event.type === "legal_unavailable") setAnalysis((current) => current?.id === event.analysis.id ? { ...current, legal: event.analysis.legal } : current);
       }, abort.signal);
+      // 스트림이 끝났는데 칸 찾기가 진행 중으로 남아 있으면 확인 버튼이 계속 잠기지 않게 일부 완료로 정리한다.
+      if (token === analysisGeneration.current && !abort.signal.aborted && mapped) {
+        setAnalysis((current) => current?.id === mapped!.id && current.mappingStatus === "in_progress" ? { ...current, mappingStatus: "partial" } : current);
+      }
     } catch (problem) {
       if (token !== analysisGeneration.current || abort.signal.aborted) return;
       if (mapped) {
         setAnalysis((current) => current?.id === mapped!.id ? { ...current, mappingStatus: current.mappingStatus === "in_progress" ? "partial" : current.mappingStatus, search: current.search.status === "pending" ? { status: "unavailable", case: "photo_only", summary: "검색 연결이 끊겨 사진으로 먼저 안내해요.", sources: [] } : current.search } : current);
-      } else { setError(problem instanceof Error ? problem.message : "서류를 읽지 못했어요."); setScreen("preview"); }
+      } else { setError(explain(problem, t.errorReadFailed)); setScreen("preview"); }
     } finally {
       if (analysisController.current === abort) analysisController.current = null;
     }
@@ -214,16 +263,16 @@ export function DocumentAssistant() {
   const loadGuide = async (field: DocumentField, nextAnswers: GuideAnswers = answersByField[field.id] ?? {}, bypassCache = false) => {
     if (!analysis) return;
     cancel(); setDialog(null); setSelected(field); setGuideError(undefined); setGuideExpired(false); setGuidance(undefined); setScreen("guide");
-    const cacheKey = `${analysis.search.status}:${field.id}:${JSON.stringify(nextAnswers)}`;
+    const cacheKey = `${locale}:${analysis.search.status}:${field.id}:${JSON.stringify(nextAnswers)}`;
     const cached = !bypassCache && guideCache.current.get(cacheKey);
     if (cached) { setGuidance(cached); setGuideVersion((version) => version + 1); if (!cached.question) setViewed((previous) => new Set([...previous, field.id])); return; }
     const token = ++generation.current, abort = new AbortController(); controller.current = abort; setGuideLoading(true);
     try {
-      const result = await requestJson<FieldGuidance>("/api/documents/guide", { analysisId: analysis.id, fieldId: field.id, answers: nextAnswers }, abort.signal);
+      const result = await requestJson<FieldGuidance>("/api/documents/guide", { analysisId: analysis.id, fieldId: field.id, answers: nextAnswers, locale }, abort.signal);
       if (token !== generation.current) return;
       guideCache.current.set(cacheKey, result); setGuidance(result); setGuideVersion((version) => version + 1);
       if (!result.question) setViewed((previous) => new Set([...previous, field.id]));
-    } catch (problem) { if (token === generation.current && !abort.signal.aborted) { setGuideExpired(problem instanceof ApiRequestError && problem.status === 410); setGuideError(problem instanceof Error ? problem.message : "이 칸을 설명하지 못했어요."); } }
+    } catch (problem) { if (token === generation.current && !abort.signal.aborted) { setGuideExpired(problem instanceof ApiRequestError && problem.status === 410); setGuideError(explain(problem, t.errorGuideFailed)); } }
     finally { if (token === generation.current) setGuideLoading(false); }
   };
   const selectedIndex = analysis?.document.fields.findIndex((field) => field.id === selected?.id) ?? -1;
@@ -237,7 +286,7 @@ export function DocumentAssistant() {
     const abort = new AbortController(); regionController.current = abort;
     setRegionBusy(true); setRegionError(undefined);
     try {
-      if (!target && !image) throw new Error("추가할 칸을 다시 골라 주세요.");
+      if (!target && !image) throw new UserError(t.regionReselect);
       const result = await requestJson<{ analysis: AnalysisResult; field: DocumentField }>("/api/documents/fields", { analysisId: analysis.id, ...(target ? { fieldId: target.id } : { image }), box }, abort.signal, target ? "PATCH" : "POST");
       if (abort.signal.aborted || token !== regionGeneration.current) return;
       latestMapped.current = mergeRegionAnalysis(latestMapped.current, result.analysis, result.field.id);
@@ -246,8 +295,8 @@ export function DocumentAssistant() {
       void loadGuide(result.field, {}, true);
     } catch (problem) {
       if (abort.signal.aborted || token !== regionGeneration.current) return;
-      if (problem instanceof ApiRequestError && problem.status === 410) { closeRegion(); recoverExpired(); setError(problem.message); }
-      else setRegionError(problem instanceof Error ? problem.message : "영역을 저장하지 못했어요. 다시 골라 주세요.");
+      if (problem instanceof ApiRequestError && problem.status === 410) { closeRegion(); recoverExpired(); setError(t.errorExpired); }
+      else setRegionError(explain(problem, t.regionSaveFailed));
     } finally { if (regionController.current === abort) { regionController.current = null; setRegionBusy(false); } }
   };
   const chooseLegalCandidate = async (candidateId: string) => {
@@ -263,28 +312,28 @@ export function DocumentAssistant() {
       setDialog(null);
     } catch (problem) {
       if (abort.signal.aborted) return;
-      setLegalError(problem instanceof Error ? problem.message : "법령을 다시 확인하지 못했어요. 잠시 뒤 다시 골라 주세요.");
+      setLegalError(explain(problem, t.legalChooseFailed));
     } finally { if (legalController.current === abort) { legalController.current = null; setLegalBusy(false); } }
   };
   const displaySources = guidance ? analysis?.search.sources.filter((source) => guidance.sourceIds.includes(source.id)) ?? [] : undefined;
 
-  return <div className="assist-shell"><div className={`assist-phone${large ? " assist-large" : ""}`}>
-    <header className="assist-header"><button className="assist-brand" onClick={reset} aria-label="서류작성 도우미 처음 화면"><span><FileText /></span>서류작성 도우미</button><div><button className="assist-font-button" aria-label={large ? "기본 글자 크기로" : "글자 크게"} aria-pressed={large} onClick={() => setLarge(!large)}>가</button><button className="assist-icon-button" aria-label="도움말" onClick={() => setDialog("help")}><HelpCircle /></button></div></header>
+  return <I18nProvider value={i18n}><div className="assist-shell"><div className={`assist-phone${large ? " assist-large" : ""}`} lang={LOCALE_INFO[locale].lang}>
+    <header className="assist-header"><button className="assist-brand" onClick={reset} aria-label={t.brandHomeAria}><span><FileText /></span>{t.brand}</button><div><button className="assist-font-button" aria-label={large ? t.fontDefault : t.fontLarger} aria-pressed={large} onClick={() => setLarge(!large)}>{t.fontGlyph}</button><button className="assist-icon-button" aria-label={t.help} onClick={() => setDialog("help")}><HelpCircle /></button></div></header>
     <main className={`assist-main is-${screen}${selected && screen === "guide" ? " has-field" : ""}`}>
-      {error && screen !== "analyzing" && <div className="assist-error" role="alert"><p>{error}</p><button className="assist-icon-button" aria-label="오류 안내 닫기" onClick={() => setError(undefined)}><X /></button></div>}
-      {screen === "home" && <HomeScreen headingRef={title} preparing={preparing} configured={configured} onCamera={() => camera.current?.click()} onGallery={() => gallery.current?.click()} onSample={() => void prepareSample()} />}
-      {screen === "preview" && photo && <section className="assist-preview"><div className="assist-screen-heading"><span>사진 확인</span><h1 ref={title} tabIndex={-1}>글자가 잘 보이나요?</h1><p>적힌 개인정보가 있다면 먼저 가려 주세요.</p></div><PhotoTools key={photoVersion} photo={photo} onChange={(next) => { if (currentPhoto.current?.url === photo.url) keepPhoto(next); else URL.revokeObjectURL(next.url); }} onError={setError} onBusyChange={setPhotoBusy} />{photo.warnings.length > 0 && <p className="assist-photo-warning">{photo.warnings[0]}</p>}{analysis && !analysis.document.fields.length && <button className="assist-text-button" disabled={photoBusy || preparing} onClick={() => openRegion()}>작성할 칸 직접 고르기</button>}<p className="assist-transfer-note">안내받기를 누르면 사진을 OpenAI로 보내 읽고 검색해요.{photo.sample ? " 지금은 가상 서류로 시험해요." : " 사진은 이 서버에 저장하지 않아요."}</p><div className="assist-preview-actions"><button className="assist-button assist-secondary" disabled={photoBusy || preparing} onClick={() => gallery.current?.click()}>다시 선택</button><button className="assist-button assist-primary" disabled={photoBusy || preparing || configured === false} onClick={() => void analyze()}>사진으로 안내받기<ArrowRight /></button></div></section>}
+      {error && screen !== "analyzing" && <div className="assist-error" role="alert"><p>{error}</p><button className="assist-icon-button" aria-label={t.closeError} onClick={() => setError(undefined)}><X /></button></div>}
+      {screen === "home" && <HomeScreen headingRef={title} preparing={preparing} configured={configured} onCamera={() => camera.current?.click()} onGallery={() => gallery.current?.click()} onSample={() => void prepareSample()} onLocale={setLocale} />}
+      {screen === "preview" && photo && <section className="assist-preview"><div className="assist-screen-heading"><span>{t.previewEyebrow}</span><h1 ref={title} tabIndex={-1}>{t.previewTitle}</h1><p>{t.previewHint}</p></div><PhotoTools key={photoVersion} photo={photo} onChange={(next) => { if (currentPhoto.current?.url === photo.url) keepPhoto(next); else URL.revokeObjectURL(next.url); }} onError={setError} onBusyChange={setPhotoBusy} />{photo.warnings.length > 0 && <p className="assist-photo-warning">{photoWarning(photo.warnings[0])}</p>}{analysis && !analysis.document.fields.length && <button className="assist-text-button" disabled={photoBusy || preparing} onClick={() => openRegion()}>{t.previewPickManually}</button>}<p className="assist-transfer-note">{t.previewTransfer} {photo.sample ? t.previewSample : t.previewNoStore}</p><div className="assist-preview-actions"><button className="assist-button assist-secondary" disabled={photoBusy || preparing} onClick={() => gallery.current?.click()}>{t.previewReselect}</button><button className="assist-button assist-primary" disabled={photoBusy || preparing || configured === false} onClick={() => void analyze()}>{t.previewStart}<ArrowRight /></button></div></section>}
       {(screen === "analyzing" || screen === "mapping") && photo && <AnalysisProgress photo={photo} stage={screen === "mapping" ? "mapping" : analysisStage} identity={identity} confirmed={screen === "mapping"} headingRef={title} onCancel={backToPhoto} />}
       {screen === "review" && identity && photo && <IdentityReview photo={photo} identity={identity} ready={Boolean(analysis?.document.readable && analysis.document.fields.length)} searchPending={analysis?.search.status === "pending"} mappingPending={analysis?.mappingStatus === "in_progress"} foundCount={analysis?.document.fields.length ?? 0} headingRef={title} onConfirm={confirmDocument} onBack={backToPhoto} />}
-      {screen === "guide" && analysis && photo && <section className={`assist-guide${selected ? " is-selected" : ""}`}><div className="assist-document-heading"><span title={analysis.document.title}>{analysis.mappingStatus === "in_progress" ? `${analysis.document.fields.length}칸부터 안내해요 · 나머지 찾는 중` : analysis.document.title}</span><button className="assist-text-button" onClick={() => setDialog("fields")}><List />칸 고르기</button></div>{!selected && <><h1 className="assist-pick-title" ref={title} tabIndex={-1}>궁금한 칸을 눌러보세요.</h1><button className="assist-search-summary" onClick={() => setDialog("sources")}><BookOpen /><span>{searchLabel(analysis)}</span><ArrowRight /></button>{analysis.legal && <button className="assist-search-summary assist-legal-entry" onClick={() => setDialog("legal")}><Scale /><span>{legalEntryLabel(analysis.legal)}</span><ArrowRight /></button>}<DocumentView photo={photo} fields={analysis.document.fields} onSelect={(field) => void loadGuide(field)} onAddField={() => openRegion()} /><p className="assist-pick-hint">{analysis.mappingStatus === "in_progress" ? "파란 칸부터 눌러보세요. 나머지 칸도 찾고 있어요." : analysis.document.warnings.some((warning) => /일부 확대|칸이 많아/.test(warning)) ? "못 찾은 칸은 ‘빠진 칸 추가’로 골라 주세요." : "파란 칸을 누르거나 칸 목록에서 골라 주세요."}</p><div className="assist-guide-bottom"><button className="assist-text-button" onClick={() => setScreen("preview")}><ArrowLeft />사진 확인</button><button className="assist-text-button" onClick={() => setScreen("finish")}>안내 마치기<Check /></button></div></>}{selected && <><FieldFocus photo={photo} field={selected} onEditRegion={() => openRegion(selected)} /><GuideCard key={`${analysis.id}-${selected.id}-${guideVersion}`} field={selected} guidance={guidance} loading={guideLoading} error={guideError} expired={guideExpired} large={large} hasPrevious={selectedIndex > 0} isLast={selectedIndex === analysis.document.fields.length - 1} moreFieldsPending={analysis.mappingStatus === "in_progress"} onClose={leaveField} onAnswer={(additional) => { const next = { ...(answersByField[selected.id] ?? {}), ...additional }; setAnswersByField((previous) => ({ ...previous, [selected.id]: next })); void loadGuide(selected, next); }} onRetry={() => guideExpired ? recoverExpired() : void loadGuide(selected, answersByField[selected.id] ?? {}, true)} onPreviousField={() => { const previous = analysis.document.fields[selectedIndex - 1]; if (previous) void loadGuide(previous); }} onNextField={() => { const next = analysis.document.fields[selectedIndex + 1]; if (next) void loadGuide(next); else { leaveField(); setScreen(analysis.mappingStatus === "in_progress" ? "guide" : "finish"); } }} onSources={() => setDialog("sources")} /></>}</section>}
-      {screen === "finish" && <section className="assist-finish"><div className="assist-success"><Check /></div><div className="assist-screen-heading"><h1 ref={title} tabIndex={-1}>안내를 살펴봤어요.</h1><p>{viewed.size}개 칸을 함께 살펴봤어요.</p></div>{analysis?.legal && <button className="assist-button assist-secondary" onClick={() => setDialog("legal")}><Scale />법령과 민원 절차 보기</button>}<div className="assist-finish-card"><h2>종이에 적기 전에</h2><label><input type="checkbox" />내 상황에 맞는 정보를 적기</label><label><input type="checkbox" />모르는 내용은 기관에 물어보기</label><p>AI 설명이 서류의 작성·제출을 대신하지는 않아요.</p></div><button className="assist-button assist-primary" onClick={() => { leaveField(); setScreen("guide"); setDialog("fields"); }}><List />궁금한 칸 다시 보기</button><button className="assist-button assist-secondary" onClick={reset}>다른 서류로 시작하기</button></section>}
+      {screen === "guide" && analysis && photo && <section className={`assist-guide${selected ? " is-selected" : ""}`}><div className="assist-document-heading"><span title={analysis.document.title}>{analysis.mappingStatus === "in_progress" ? t.guidePartialTitle(analysis.document.fields.length) : analysis.document.title}</span><button className="assist-text-button" onClick={() => setDialog("fields")}><List />{t.guidePickFields}</button></div>{!selected && <><h1 className="assist-pick-title" ref={title} tabIndex={-1}>{t.guidePickTitle}</h1><button className="assist-search-summary" onClick={() => setDialog("sources")}><BookOpen /><span>{searchLabel(analysis, t)}</span><ArrowRight /></button>{analysis.legal && <button className="assist-search-summary assist-legal-entry" onClick={() => setDialog("legal")}><Scale /><span>{legalEntryLabel(analysis.legal, t)}</span><ArrowRight /></button>}<DocumentView photo={photo} fields={analysis.document.fields} onSelect={(field) => void loadGuide(field)} onAddField={() => openRegion()} /><p className="assist-pick-hint">{analysis.mappingStatus === "in_progress" ? t.guideHintPartial : analysis.document.warnings.some((warning) => /일부 확대|칸이 많아/.test(warning)) ? t.guideHintMissing : t.guideHintDefault}</p><div className="assist-guide-bottom"><button className="assist-text-button" onClick={() => setScreen("preview")}><ArrowLeft />{t.guideBackToPhoto}</button><button className="assist-text-button" onClick={() => setScreen("finish")}>{t.guideFinish}<Check /></button></div></>}{selected && <><FieldFocus photo={photo} field={selected} onEditRegion={() => openRegion(selected)} /><GuideCard key={`${analysis.id}-${selected.id}-${guideVersion}`} field={selected} guidance={guidance} loading={guideLoading} error={guideError} expired={guideExpired} large={large} hasPrevious={selectedIndex > 0} isLast={selectedIndex === analysis.document.fields.length - 1} moreFieldsPending={analysis.mappingStatus === "in_progress"} onClose={leaveField} onAnswer={(additional) => { const next = { ...(answersByField[selected.id] ?? {}), ...additional }; setAnswersByField((previous) => ({ ...previous, [selected.id]: next })); void loadGuide(selected, next); }} onRetry={() => guideExpired ? recoverExpired() : void loadGuide(selected, answersByField[selected.id] ?? {}, true)} onPreviousField={() => { const previous = analysis.document.fields[selectedIndex - 1]; if (previous) void loadGuide(previous); }} onNextField={() => { const next = analysis.document.fields[selectedIndex + 1]; if (next) void loadGuide(next); else { leaveField(); setScreen(analysis.mappingStatus === "in_progress" ? "guide" : "finish"); } }} onSources={() => setDialog("sources")} /></>}</section>}
+      {screen === "finish" && <section className="assist-finish"><div className="assist-success"><Check /></div><div className="assist-screen-heading"><h1 ref={title} tabIndex={-1}>{t.finishTitle}</h1><p>{t.finishViewed(viewed.size)}</p></div>{analysis?.legal && <button className="assist-button assist-secondary" onClick={() => setDialog("legal")}><Scale />{t.finishLegal}</button>}<div className="assist-finish-card"><h2>{t.finishCardTitle}</h2><label><input type="checkbox" />{t.finishCheckOwn}</label><label><input type="checkbox" />{t.finishCheckAsk}</label><p>{t.finishNote}</p></div><button className="assist-button assist-primary" onClick={() => { leaveField(); setScreen("guide"); setDialog("fields"); }}><List />{t.finishReview}</button><button className="assist-button assist-secondary" onClick={reset}>{t.finishRestart}</button></section>}
     </main>
-    <input className="assist-file-input" ref={camera} type="file" accept="image/*" capture="environment" tabIndex={-1} aria-label="카메라로 서류 촬영" onChange={(event) => { void onFile(event.target.files?.[0]); event.target.value = ""; }} /><input className="assist-file-input" ref={gallery} type="file" accept="image/*" tabIndex={-1} aria-label="서류 사진 선택" onChange={(event) => { void onFile(event.target.files?.[0]); event.target.value = ""; }} />
+    <input className="assist-file-input" ref={camera} type="file" accept="image/*" capture="environment" tabIndex={-1} aria-label={t.cameraInputAria} onChange={(event) => { void onFile(event.target.files?.[0]); event.target.value = ""; }} /><input className="assist-file-input" ref={gallery} type="file" accept="image/*" tabIndex={-1} aria-label={t.galleryInputAria} onChange={(event) => { void onFile(event.target.files?.[0]); event.target.value = ""; }} />
     {regionTarget !== undefined && photo && analysis && <RegionEditorDialog photo={photo} field={regionTarget ?? undefined} loading={regionBusy} error={regionError} onClose={() => { closeRegion(); if (selected && !guidance && !guideLoading) void loadGuide(selected); }} onSave={(selection) => void saveRegion(selection)} />}
-    {dialog === "help" && <AssistantDialog title="이렇게 이용해 보세요" onClose={() => setDialog(null)} footer={<button className="assist-button assist-primary assist-full" onClick={() => setDialog(null)}>알겠어요</button>}><div className="assist-help-copy"><p>① 서류 사진을 골라요.</p><p>② 궁금한 칸을 골라요.</p><p>③ 설명과 예시를 넘겨 봐요.</p><p className="assist-transfer-note">사진을 OpenAI로 보내 분석해요. 실제 정보는 종이에 직접 적어 주세요.</p></div></AssistantDialog>}
+    {dialog === "help" && <AssistantDialog title={t.helpTitle} onClose={() => setDialog(null)} footer={<button className="assist-button assist-primary assist-full" onClick={() => setDialog(null)}>{t.ok}</button>}><div className="assist-help-copy"><p>{t.helpStep1}</p><p>{t.helpStep2}</p><p>{t.helpStep3}</p><p className="assist-transfer-note">{t.helpNote}</p></div></AssistantDialog>}
     {dialog === "fields" && analysis && <FieldDialog fields={analysis.document.fields} selectedId={selected?.id} onSelect={(field) => void loadGuide(field)} onClose={() => setDialog(null)} />}
-    {dialog === "legal" && analysis?.legal && <AssistantDialog title="법령과 민원 절차" onClose={() => setDialog(null)} footer={<button className="assist-button assist-primary assist-full" onClick={() => setDialog(null)}>알겠어요</button>}><LegalPanel legal={analysis.legal} formDescription={identity?.description} documentTitle={analysis.document.title} busy={legalBusy} error={legalError} onChooseCandidate={() => { setLegalError(undefined); setDialog("legal-candidates"); }} /></AssistantDialog>}
+    {dialog === "legal" && analysis?.legal && <AssistantDialog title={t.legalTitle} onClose={() => setDialog(null)} footer={<button className="assist-button assist-primary assist-full" onClick={() => setDialog(null)}>{t.ok}</button>}>{t.koreanSourceNote && <p className="assist-language-note">{t.koreanSourceNote}</p>}<div lang="ko"><LegalPanel legal={analysis.legal} formDescription={identity?.description} documentTitle={analysis.document.title} busy={legalBusy} error={legalError} onChooseCandidate={() => { setLegalError(undefined); setDialog("legal-candidates"); }} /></div></AssistantDialog>}
     {dialog === "legal-candidates" && analysis?.legal && <LegalCandidateDialog candidates={buildLegalViewModel(analysis.legal).candidates} currentId={analysis.legal.canonicalRule?.id} busy={legalBusy} error={legalError} onSelect={(candidateId) => void chooseLegalCandidate(candidateId)} onClose={() => setDialog("legal")} />}
     {dialog === "sources" && analysis && <SourceDialog mappingPending={analysis.mappingStatus === "in_progress"} search={analysis.search} sources={selected && guidance ? displaySources : undefined} onClose={() => setDialog(null)} />}
-  </div></div>;
+  </div></div></I18nProvider>;
 }

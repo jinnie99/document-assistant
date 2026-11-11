@@ -7,7 +7,7 @@ import type { AnalysisResult } from "../../lib/documents/types.ts";
 
 const analysis: AnalysisResult = { id: "test", expiresAt: "2099-01-01T00:00:00Z", document: { title: "상담 신청서", institution: "가상기관", formNumber: "", revision: "", readable: true, warnings: [], fields: [{ id: "name", label: "이름", box: { x: 0, y: 0, width: 1, height: .1 }, confidence: .9, printedHint: "private-filled-value" }] }, search: { status: "completed", case: "photo_only", summary: "사진으로 설명", sources: [] } };
 const message = (value: unknown) => ({ type: "message", content: [{ type: "output_text", text: JSON.stringify(value) }] });
-const guide = { fieldId: "name", explanation: "상담받을 분의 이름을 적어요.", example: "홍길동 (가상)", check: "헷갈리면 기관에 확인해요.", provenance: "official_guide", sourceIds: ["invented"], question: null };
+const guide = { fieldId: "name", explanation: "상담받을 분의 이름을 적어요.", example: "홍길동 (가상)", check: "성까지 빠짐없이 적었는지 · 신분증의 이름과 같은지 확인해요.", provenance: "official_guide", sourceIds: ["invented"], question: null };
 
 function fakeKey(t: TestContext) {
   const original = process.env.OPENAI_API_KEY;
@@ -48,6 +48,25 @@ test("suppressing an already-answered question cannot return an empty explanatio
   const question = { id: "visit", text: "오늘 어떤 일을 보러 오셨나요?", choices: [{ id: "self", label: "제 일로 왔어요" }, { id: "other", label: "다른 분 일을 도와요" }, { id: "unknown", label: "잘 모르겠어요" }] };
   t.mock.method(globalThis, "fetch", async () => Response.json({ status: "completed", output: [message({ ...guide, explanation: "", question })] }));
   await assert.rejects(() => generateGuidance(analysis, "name", { visit: "unknown" }), (error) => error instanceof Error && "code" in error && error.code === "AI_INVALID_RESPONSE");
+});
+
+test("확인 내용은 기관 문의로 떠넘기지 않고 스스로 점검할 구체 항목을 요구한다", async (t) => {
+  fakeKey(t);
+  const sent: Record<string, unknown>[] = [];
+  t.mock.method(globalThis, "fetch", async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)));
+    return Response.json({ status: "completed", output: [message(guide)] });
+  });
+  await generateGuidance(analysis, "name", {});
+  await generateGuidance(analysis, "name", {}, undefined, [], "en");
+  for (const body of sent) {
+    const instructions = String(body.instructions);
+    assert.match(instructions, /check는 사용자가 이 칸을 다 쓴 뒤 종이를 보며 스스로 점검할 구체적인 항목/);
+    assert.match(instructions, /check의 기본 답으로 쓰지 마세요/);
+    assert.doesNotMatch(instructions, /무엇을 기관에 물어볼지 check에 적으세요|접수할 곳에 물어보도록 check에 남기세요/);
+  }
+  const englishSchema = JSON.stringify(sent[1].text);
+  assert.match(englishSchema, /"check":\{[^}]*"maxLength":360/);
 });
 
 test("web search receives only printed metadata, not field hints or images", async (t) => {

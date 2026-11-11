@@ -433,6 +433,7 @@
 .assist-identity-actions { flex-shrink: 0; display: grid; gap: 2px; }
 .assist-identity-actions .assist-button { min-height: 56px; font-size: 1em; }
 .assist-identity-actions .assist-text-button { min-height: 44px; font-size: .86em !important; }
+.assist-identity-wait { margin-bottom: 4px; text-align: center; font-size: .74em; line-height: 1.45; color: #536579; }
 .assist-large .assist-analysis-heading h1, .assist-large .assist-identity-heading h1 { font-size: 29px; }
 .assist-large .assist-identity-copy h2 { font-size: 28px; }
 @keyframes assist-analysis-scan {
@@ -514,3 +515,27 @@
 .assist-legal-choice span { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 14px; }
 .assist-legal-choice small { color: var(--assist-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 @media (max-width: 480px) { .assist-legal-rows > div { grid-template-columns: 1fr; gap: 2px; } }
+
+/* 안내 언어 선택(메인 화면 상단)과 다국어 표시 */
+.assist-languages { flex-shrink: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; margin: -10px -8px 0; }
+.assist-languages button { min-height: 52px; display: grid; justify-items: center; align-content: center; gap: 4px; padding: 5px 0 4px; border: 1.5px solid transparent; border-radius: 12px; background: transparent; color: #59675f; font-size: 11px !important; font-weight: 500; line-height: 1.2; letter-spacing: -.02em; white-space: nowrap; }
+.assist-languages button svg { width: 30px; height: 20px; border-radius: 3px; box-shadow: 0 0 0 1px #1f29331f, 0 1px 3px #1f293314; }
+.assist-languages button:hover:not(:disabled) { background: #f2f5ed; }
+.assist-languages button[aria-checked="true"] { border-color: #245fd8; background: #fff; color: #1a3f94; font-weight: 700; box-shadow: 0 3px 10px #245fd81a; }
+.assist-field-original { display: block; margin-top: 1px; color: var(--assist-muted); font-size: .8em; font-weight: 400; }
+.assist-language-note { margin-bottom: 10px !important; padding: 8px 11px; border-radius: 11px; background: var(--assist-soft); color: var(--assist-blue-deep); font-size: 13px; line-height: 1.5; }
+/* 한국어보다 글줄이 길어지는 언어는 큰 제목과 버튼 글자를 줄여 한 화면에 담는다. */
+.assist-phone:not(:lang(ko)) .assist-home-copy h1 { font-size: 31px; line-height: 1.22; letter-spacing: -.035em; }
+.assist-phone:not(:lang(ko)) .assist-home-description { margin-top: 10px !important; line-height: 1.5; }
+.assist-phone:not(:lang(ko)) .assist-brand { font-size: 18px !important; letter-spacing: -.03em; }
+.assist-phone:not(:lang(ko)) .assist-home-buttons .assist-button { white-space: normal; text-align: left; line-height: 1.3; }
+.assist-phone:not(:lang(ko)) .assist-home-buttons .assist-secondary { text-align: center; }
+.assist-phone:not(:lang(ko)) .assist-home-buttons .assist-text-button { font-size: 14px !important; }
+.assist-phone:lang(th) { line-height: 1.7; }
+@media (max-height: 700px) {
+  .assist-languages { margin-top: -6px; }
+  .assist-languages button { min-height: 46px; gap: 3px; }
+  .assist-phone:not(:lang(ko)) .assist-home-copy h1 { font-size: 26px; }
+}
+/* 옮긴 서류 설명은 한국어보다 길어 네 줄까지 보여 준다. */
+.assist-phone:not(:lang(ko)) .assist-identity-copy > p { -webkit-line-clamp: 4; font-size: .86em; line-height: 1.45; }

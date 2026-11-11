@@ -1,4 +1,5 @@
 import { MAX_DOCUMENT_FIELDS } from "./limits.ts";
+import { KOREAN_GUIDE_LIMITS, type GuideLimits } from "../i18n/locales.ts";
 
 type Schema = Record<string, unknown>;
 const string = (maxLength: number, minLength = 0): Schema => ({ type: "string", minLength, maxLength });
@@ -52,12 +53,15 @@ export const SEARCH_SCHEMA = object({
   }), 12),
 });
 
-export const GUIDE_SCHEMA = object({
-  fieldId: id, explanation: string(80), example: string(80), check: string(80),
+export const guideSchema = (limits: GuideLimits): Schema => object({
+  fieldId: id, explanation: string(limits.text), example: string(limits.text), check: string(limits.check),
   provenance: { type: "string", enum: ["official_guide", "form_context", "photo_inference"] },
   sourceIds: array(id, 12),
-  question: { anyOf: [object({ id, text: string(50, 1), choices: array(object({ id, label: string(20, 1) }), 3, 3) }), { type: "null" }] },
+  question: { anyOf: [object({ id, text: string(limits.question, 1), choices: array(object({ id, label: string(limits.choice, 1) }), 3, 3) }), { type: "null" }] },
 });
+export const GUIDE_SCHEMA = guideSchema(KOREAN_GUIDE_LIMITS);
+
+export const LABEL_TRANSLATION_SCHEMA = object({ items: array(object({ index: { type: "integer", minimum: 0, maximum: MAX_DOCUMENT_FIELDS }, text: string(160, 1) }), MAX_DOCUMENT_FIELDS) });
 
 export const LEGAL_SUMMARY_SCHEMA = object({
   overview: string(2000),

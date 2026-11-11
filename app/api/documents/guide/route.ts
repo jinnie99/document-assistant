@@ -2,12 +2,14 @@ import { generateGuidance } from "@/lib/documents/openai";
 import { analysisStore, guideCacheKey } from "@/lib/documents/store";
 import { errorResponse, InputError, json, requestJson, withBudget } from "@/lib/documents/http";
 import type { GuideAnswers } from "@/lib/documents/types";
+import { parseLocale } from "@/lib/i18n/locales";
 
 export const maxDuration = 90;
 
 export async function POST(request: Request) {
   try {
-    const { analysisId, fieldId, answers = {} } = await requestJson(request);
+    const { analysisId, fieldId, answers = {}, locale: requestedLocale } = await requestJson(request);
+    const locale = parseLocale(requestedLocale);
     if (typeof analysisId !== "string" || analysisId.length > 80 || typeof fieldId !== "string") throw new InputError("INVALID_JSON");
     const record = analysisStore.get(analysisId);
     if (!record) throw new InputError("SESSION_EXPIRED", 410);
@@ -23,12 +25,12 @@ export async function POST(request: Request) {
       const question = record.questions.get(fieldId)!.get(id)!;
       return { question: question.text, answer: question.choices.find((choice) => choice.id === value)!.label };
     });
-    const cacheKey = guideCacheKey(record.analysis.search.status, fieldId, entries as [string, string][]);
+    const cacheKey = guideCacheKey(record.analysis.search.status, fieldId, entries as [string, string][]) + (locale === "ko" ? "" : `:${locale}`);
     const cached = record.guides.get(cacheKey);
     if (cached) return json(cached);
     const version = record.version;
     return await withBudget(request, async () => {
-      const guide = await generateGuidance(record.analysis, fieldId, safeAnswers, request.signal, answerContext);
+      const guide = await generateGuidance(record.analysis, fieldId, safeAnswers, request.signal, answerContext, locale);
       if (request.signal.aborted) throw new InputError("CANCELLED", 499);
       return json(analysisStore.saveGuide(analysisId, version, cacheKey, guide));
     });

@@ -2,7 +2,10 @@
 
 import type { Ref } from "react";
 import Image from "next/image";
-import { ArrowRight, Camera, Download, PlayCircle, ShieldCheck, Upload } from "lucide-react";
+import { ArrowRight, Camera, Download, ShieldCheck, Upload } from "lucide-react";
+import { SAMPLE_DOCUMENT_NAME, SAMPLE_DOCUMENT_URL } from "./sample-document";
+import { LanguagePicker } from "./language-picker";
+import { useI18n, type Locale } from "./i18n";
 
 type Props = {
   headingRef: Ref<HTMLHeadingElement>;
@@ -11,28 +14,30 @@ type Props = {
   onCamera: () => void;
   onGallery: () => void;
   onSample: () => void;
+  onLocale: (locale: Locale) => void;
 };
 
-export function HomeScreen({ headingRef, preparing, configured, onCamera, onGallery, onSample }: Props) {
+export function HomeScreen({ headingRef, preparing, configured, onCamera, onGallery, onSample, onLocale }: Props) {
+  const { t } = useI18n();
   return <section className="assist-home">
+    <LanguagePicker onChange={onLocale} disabled={preparing} />
     <div className="assist-home-copy">
-      <p className="assist-home-eyebrow">사진으로 받는 쉬운 작성 안내</p>
-      <h1 ref={headingRef} tabIndex={-1}>서류 쓰다가<br /><span>막히셨나요?</span></h1>
-      <p className="assist-home-description">사진으로 보여주시면<br />어디에 무엇을 쓸지 알려드려요.</p>
+      <p className="assist-home-eyebrow">{t.homeEyebrow}</p>
+      <h1 ref={headingRef} tabIndex={-1}>{t.homeTitle[0]}<br /><span>{t.homeTitle[1]}</span></h1>
+      <p className="assist-home-description">{t.homeDescription[0]}<br />{t.homeDescription[1]}</p>
     </div>
     <div className="assist-home-art" aria-hidden="true">
       <Image className="assist-home-illustration" src="/images/home-guide-warm.webp" alt="" fill sizes="(max-width: 480px) 100vw, 390px" loading="eager" fetchPriority="high" />
     </div>
     <div className="assist-home-buttons">
-      <button className="assist-button assist-primary" disabled={preparing} onClick={onCamera}><Camera />서류 사진 찍기<ArrowRight /></button>
-      <button className="assist-button assist-secondary" disabled={preparing} onClick={onGallery}><Upload />찍어둔 사진 고르기</button>
+      <button className="assist-button assist-primary" disabled={preparing} onClick={onCamera}><Camera />{t.homeCamera}<ArrowRight /></button>
+      <button className="assist-button assist-secondary" disabled={preparing} onClick={onGallery}><Upload />{t.homeGallery}</button>
       <div className="assist-home-links">
-        <button className="assist-text-button" disabled={preparing} onClick={onSample}>{preparing ? "사진을 준비하고 있어요…" : "먼저 예시로 살펴보기"}<ArrowRight /></button>
-        <a className="assist-text-button" href="/promo"><PlayCircle />시연영상 보기</a>
-        <a className="assist-text-button" href="/samples/inspection-form-sample.png" download="정기검사_신청서_예시.png"><Download />예시 서류 사진 받기</a>
+        <button className="assist-text-button" disabled={preparing} onClick={onSample}>{preparing ? t.homePreparing : t.homeSample}<ArrowRight /></button>
+        <a className="assist-text-button" href={SAMPLE_DOCUMENT_URL} download={SAMPLE_DOCUMENT_NAME}><Download />{t.homeDownload}</a>
       </div>
     </div>
-    <p className="assist-reassurance"><ShieldCheck />사진은 서버에 파일로 남기지 않아요.</p>
-    {configured === false && <p className="assist-service-note">서비스 연결을 준비하고 있어요. 설정이 끝나면 실제 안내를 받을 수 있어요.</p>}
+    <p className="assist-reassurance"><ShieldCheck />{t.homeReassurance}</p>
+    {configured === false && <p className="assist-service-note">{t.homeServiceNote}</p>}
   </section>;
 }

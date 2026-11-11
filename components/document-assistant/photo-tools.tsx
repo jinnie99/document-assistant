@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCw, ShieldCheck, Undo2 } from "lucide-react";
 import type { AssistantPhoto } from "./types";
+import { useI18n } from "./i18n";
 
 type Mask = { x: number; y: number; width: number; height: number };
 
@@ -32,6 +33,7 @@ export function PhotoTools({ photo, onChange, onError, onBusyChange }: { photo: 
   const [undoCount, setUndoCount] = useState(0);
   const anchor = useRef<{ x: number; y: number } | null>(null);
   const history = useRef<AssistantPhoto[]>([]);
+  const { t } = useI18n();
 
   useEffect(() => {
     const element = frame.current;
@@ -56,7 +58,7 @@ export function PhotoTools({ photo, onChange, onError, onBusyChange }: { photo: 
       if (history.current.length > 10) { const expired = history.current.shift(); if (expired) URL.revokeObjectURL(expired.url); }
       setUndoCount(history.current.length);
       onChange(next); setMask(undefined); anchor.current = null;
-    } catch (error) { onError(error instanceof Error ? error.message : "사진을 바꾸지 못했어요."); }
+    } catch { onError(t.photoChangeFailed); }
     finally { setEditing(false); onBusyChange(false); }
   };
   const point = (event: React.PointerEvent) => {
@@ -83,12 +85,12 @@ export function PhotoTools({ photo, onChange, onError, onBusyChange }: { photo: 
   };
 
   return <div className="assist-photo-editor">
-    <div ref={frame} className="assist-photo-stage"><div ref={photoArea} className={`assist-photo-area${masking ? " is-masking" : ""}`} style={{ width, aspectRatio: `${photo.width} / ${photo.height}` }} tabIndex={masking ? 0 : -1} role={masking ? "application" : undefined} aria-label={masking ? "사진 개인정보 가리기. 화살표로 위치, Shift와 화살표로 크기, Enter로 확정" : "선택한 서류 사진"} onKeyDown={keyMask} onPointerDown={(event) => { if (!masking || editing) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); anchor.current = point(event); setMask({ ...anchor.current, width: 0, height: 0 }); }} onPointerMove={(event) => { if (!anchor.current) return; const end = point(event); setMask({ x: Math.min(anchor.current.x, end.x), y: Math.min(anchor.current.y, end.y), width: Math.abs(anchor.current.x - end.x), height: Math.abs(anchor.current.y - end.y) }); }} onPointerUp={(event) => { if (!anchor.current) return; const end = point(event), start = anchor.current; anchor.current = null; const rectangle = { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(start.x - end.x), height: Math.abs(start.y - end.y) }; if (rectangle.width > .005 && rectangle.height > .005) void edit(false, rectangle); else setMask(undefined); }} onPointerCancel={() => { anchor.current = null; setMask(undefined); }}>
+    <div ref={frame} className="assist-photo-stage"><div ref={photoArea} className={`assist-photo-area${masking ? " is-masking" : ""}`} style={{ width, aspectRatio: `${photo.width} / ${photo.height}` }} tabIndex={masking ? 0 : -1} role={masking ? "application" : undefined} aria-label={masking ? t.photoMaskAria : t.photoAlt} onKeyDown={keyMask} onPointerDown={(event) => { if (!masking || editing) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); anchor.current = point(event); setMask({ ...anchor.current, width: 0, height: 0 }); }} onPointerMove={(event) => { if (!anchor.current) return; const end = point(event); setMask({ x: Math.min(anchor.current.x, end.x), y: Math.min(anchor.current.y, end.y), width: Math.abs(anchor.current.x - end.x), height: Math.abs(anchor.current.y - end.y) }); }} onPointerUp={(event) => { if (!anchor.current) return; const end = point(event), start = anchor.current; anchor.current = null; const rectangle = { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(start.x - end.x), height: Math.abs(start.y - end.y) }; if (rectangle.width > .005 && rectangle.height > .005) void edit(false, rectangle); else setMask(undefined); }} onPointerCancel={() => { anchor.current = null; setMask(undefined); }}>
       {/* eslint-disable-next-line @next/next/no-img-element -- 브라우저의 일시 사진 URL을 표시한다. */}
-      <img src={photo.url} alt="선택한 서류 사진" draggable={false} />
+      <img src={photo.url} alt={t.photoAlt} draggable={false} />
       {mask && <svg className="assist-mask-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><rect x={mask.x * 100} y={mask.y * 100} width={mask.width * 100} height={mask.height * 100} /></svg>}
     </div></div>
-    <div className="assist-photo-toolbar"><button disabled={editing} onClick={() => void edit(true)}><RotateCw />돌리기</button><button disabled={editing} aria-pressed={masking} onClick={() => { setMasking(!masking); setMask(undefined); }}><ShieldCheck />개인정보 가리기</button><button disabled={editing || !undoCount} onClick={() => { const previous = history.current.pop(); if (previous) onChange(previous); setUndoCount(history.current.length); setMask(undefined); }}><Undo2 />취소</button></div>
-    {masking && <p className="assist-mask-instruction">가릴 곳을 손가락으로 쓸어 주세요.<span className="assist-visually-hidden">키보드는 화살표로 위치, Shift와 화살표로 크기를 바꾸고 Enter로 가립니다.</span></p>}
+    <div className="assist-photo-toolbar"><button disabled={editing} onClick={() => void edit(true)}><RotateCw />{t.photoRotate}</button><button disabled={editing} aria-pressed={masking} onClick={() => { setMasking(!masking); setMask(undefined); }}><ShieldCheck />{t.photoMask}</button><button disabled={editing || !undoCount} onClick={() => { const previous = history.current.pop(); if (previous) onChange(previous); setUndoCount(history.current.length); setMask(undefined); }}><Undo2 />{t.photoUndo}</button></div>
+    {masking && <p className="assist-mask-instruction">{t.photoMaskInstruction}<span className="assist-visually-hidden">{t.photoMaskKeyboard}</span></p>}
   </div>;
 }

@@ -125,3 +125,20 @@ test("Responses strict JSON schema는 모든 객체 속성을 필수로 선언�
   }
   [IDENTITY_SCHEMA, VISION_SCHEMA, TABLE_VISION_SCHEMA, SEARCH_SCHEMA, GUIDE_SCHEMA].forEach(inspect);
 });
+
+test("다른 언어 안내는 넓힌 길이 제한과 그 언어의 모름 선택지를 받는다", async () => {
+  const { TRANSLATED_GUIDE_LIMITS, guideLimits, parseLocale } = await import("../../lib/i18n/locales.ts");
+  const { guideSchema } = await import("../../lib/documents/schemas.ts");
+  const long = "Write the representative's name exactly as it appears on the business registration certificate.";
+  const question = { id: "visit", text: "Are you here for yourself or helping someone else today?", choices: [{ id: "self", label: "For myself" }, { id: "other", label: "Helping someone else" }, { id: "unknown", label: "I'm not sure" }] };
+  const english = { fieldId: "name", explanation: long, example: "홍길동 (name of the representative)", check: "", provenance: "photo_inference", sourceIds: [], question };
+  assert.throws(() => parseGuidance(english, "name"));
+  assert.equal(parseGuidance(english, "name", TRANSLATED_GUIDE_LIMITS).question?.choices[2].label, "I'm not sure");
+  assert.throws(() => parseGuidance({ ...english, explanation: "x".repeat(TRANSLATED_GUIDE_LIMITS.text + 1) }, "name", TRANSLATED_GUIDE_LIMITS));
+  assert.throws(() => parseGuidance({ ...english, question: { ...question, choices: [question.choices[0], question.choices[1], { id: "maybe", label: "I'm not sure" }] } }, "name", TRANSLATED_GUIDE_LIMITS));
+  assert.equal(parseLocale("vi"), "vi");
+  assert.equal(parseLocale("xx"), "ko");
+  assert.equal(parseLocale(undefined), "ko");
+  assert.deepEqual(guideSchema(guideLimits("ko")), GUIDE_SCHEMA);
+  assert.equal(JSON.stringify(guideSchema(guideLimits("th"))).includes(`"maxLength":${TRANSLATED_GUIDE_LIMITS.text}`), true);
+});

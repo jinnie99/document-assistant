@@ -15,11 +15,14 @@ export function documentConfirmationDestination(_identity: DocumentIdentity | un
   return "guide";
 }
 
+/** 빠른 확인 결과가 없을 때 쓰는 기본 설명. 화면은 이 값을 고른 언어의 문구로 바꿔 보여 준다. */
+export const READING_IDENTITY_DESCRIPTION = "사진에서 읽은 서류입니다. 이름이 맞는지 확인해 주세요.";
+
 export function documentIdentityForReading(document: DocumentReading, previous?: DocumentIdentity): DocumentIdentity {
   return {
     title: document.title, institution: document.institution, formNumber: document.formNumber, revision: document.revision,
     readable: document.readable,
-    description: previous?.readable && !identityTitleChanged(previous, document) ? previous.description : "사진에서 읽은 서류입니다. 이름이 맞는지 확인해 주세요.",
+    description: previous?.readable && !identityTitleChanged(previous, document) ? previous.description : READING_IDENTITY_DESCRIPTION,
   };
 }
 

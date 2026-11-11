@@ -1,4 +1,5 @@
-import { readDocument, searchDocument } from "@/lib/documents/openai";
+import { readDocument, readIdentity, searchDocument } from "@/lib/documents/openai";
+import { parseLocale } from "@/lib/i18n/locales";
 import { analysisStore } from "@/lib/documents/store";
 import { validateImage } from "@/lib/documents/validation";
 import { consumeAnalysisQuota, errorResponse, InputError, json, requestJson, withBudget } from "@/lib/documents/http";
@@ -12,7 +13,10 @@ export async function POST(request: Request) {
     let image: string;
     try { image = validateImage(input.image); } catch { throw new InputError("INVALID_IMAGE"); }
     consumeAnalysisQuota(request);
-    if (request.headers.get("accept")?.toLowerCase().split(",").some(value => value.trim().split(";")[0] === "application/x-ndjson")) return createAnalysisStream(request, image);
+    if (request.headers.get("accept")?.toLowerCase().split(",").some(value => value.trim().split(";")[0] === "application/x-ndjson")) {
+      const locale = parseLocale(input.locale);
+      return createAnalysisStream(request, image, locale === "ko" ? {} : { readIdentity: (photo, signal) => readIdentity(photo, signal, locale) });
+    }
     return await withBudget(request, async () => {
       const document = await readDocument(image, request.signal);
       const search = await searchDocument(document, request.signal);

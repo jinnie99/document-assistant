@@ -76,8 +76,8 @@
 ### 설치와 실행
 
 ```bash
-git clone https://github.com/jinnie99/document-assistant.git
-cd document-assistant
+git clone https://gitlab.aigov.go.kr/yjkim1099/document-assistant-main.git
+cd document-assistant-main
 npm ci
 cp .env.example .env.local   # 아래 환경 변수를 채웁니다
 npm run build

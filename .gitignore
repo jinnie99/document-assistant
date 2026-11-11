@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 내부 자료(출품 저장소에서 제외, 로컬에만 보관)
+/docs/
+/MANIFEST.json

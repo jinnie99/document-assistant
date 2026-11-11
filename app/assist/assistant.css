@@ -186,7 +186,8 @@
 .assist-dialog::backdrop { background: #1928414d; backdrop-filter: blur(3px); }
 .assist-dialog > header { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 16px 17px; border-bottom: 1px solid var(--assist-line); }
 .assist-dialog > header h2 { font-size: 21px; line-height: 1.35; letter-spacing: -.035em; }
-.assist-dialog-body { flex: 1; min-height: 0; overflow: hidden; padding: 16px 17px; }
+/* 높이가 정해지지 않은 대화상자라 flex-basis를 auto로 둔다. 0이면 iOS Safari에서 본문이 0으로 접힌다. 길면 본문만 스크롤한다. */
+.assist-dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 17px; }
 .assist-dialog > footer { flex-shrink: 0; padding: 13px 17px; border-top: 1px solid var(--assist-line); }
 .assist-dialog-pages { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 9px; }
 .assist-dialog-pages .assist-button { min-height: 46px; padding: 9px 7px; gap: 4px; font-size: 13px; }

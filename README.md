@@ -7,8 +7,8 @@
 
 | 구분 | 주소 |
 | --- | --- |
-| 서비스 | **https://document-assistant-main.onrender.com/assist** |
-| 홍보영상 | https://document-assistant-main.onrender.com/promo |
+| 서비스 | **https://document-assistant-izqc.onrender.com/assist** |
+| 홍보영상 | https://document-assistant-izqc.onrender.com/promo |
 
 - 별도 가입 없이 휴대폰·PC 브라우저에서 바로 사용할 수 있습니다. 휴대폰 화면에 맞춰 설계했습니다.
 - 처음 화면의 **먼저 예시로 살펴보기**를 누르면 예시 서류(전기안전공사 정기검사 신청서)로 전체 흐름을 바로 체험할 수 있습니다.
